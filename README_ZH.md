@@ -10,7 +10,7 @@
 </p>
 
 [![Release](https://img.shields.io/github/v/release/baishu136/OmniDownloader?color=blue&label=Release)](https://github.com/baishu136/OmniDownloader/releases)
-[![Android](https://img.shields.io/badge/Android-v1.5.10-green.svg)](https://developer.android.com)
+[![Android](https://img.shields.io/badge/Android-v1.6.2--native--beta1-blue.svg)](https://developer.android.com)
 [![iOS](https://img.shields.io/badge/iOS-SwiftUI%20Native-orange.svg)](OmniDownloader-iOS)
 [![Windows](https://img.shields.io/badge/Windows-Desktop%20%26%20Web-blue.svg)](windows)
 [![License](https://img.shields.io/badge/License-MIT-orange.svg)](LICENSE)
@@ -19,13 +19,16 @@
 
 </div>
 
+> **Android v1.6.2 Native Beta 1（仅本重构分支）**：使用 aria2 + OkHttp，支持暂停/断点续传和部分米游社公开文章视频；增加 HTML5、OpenGraph、JSON-LD 通用解析。**不内置 yt-dlp/Python/FFmpeg，也不宣称 YouTube、X、Instagram 等站点完整支持。** HLS/M3U8、GIF 与 MP3/FLAC/OPUS 转码仍需独立模块。以下 Windows/iOS 与历史版本资料不代表本 Android Beta 的全部功能。
+
+
 ---
 
 ## 🌟 全平台产品形态一览
 
 | 平台形态 | 适用设备 | 核心技术栈 | 获取与安装方式 |
 | :--- | :--- | :--- | :--- |
-| **🤖 Android 原生版** | Android 手机 / 平板 / 车机 / 电视 (Android 8.0+) | Kotlin + Jetpack Compose + yt-dlp + FFmpeg | [下载最新 APK (v1.5.10)](https://github.com/baishu136/OmniDownloader/releases/latest/download/OmniDownloader_LATEST.apk) 或 Releases 页面 |
+| **🤖 Android 原生版** | Android 手机 / 平板 / 车机 / 电视 (Android 8.0+) | Kotlin + Jetpack Compose + 原生 aria2 + OkHttp + Android MediaMuxer | [本分支测试 APK（Actions）](https://github.com/Junyxor/OmniDownloader/actions/workflows/aria2-native-apk.yml) |
 | **🍎 iOS 原生版** | iPhone / iPad (iOS 15.0+) | Swift 5.9 + SwiftUI + AVFoundation 原生硬件混流 + Photos 相簿 | 源码工程在 [`OmniDownloader-iOS`](OmniDownloader-iOS)，支持 GitHub Actions 免费打包 IPA 并通过 TrollStore 巨魔或自签侧载 |
 | **💻 Windows 桌面版** | Windows 10 / 11 (64位) | Python 3 + FastAPI + Edge WebView2 原生独立窗口 + 内置 FFmpeg | 下载 [`windows/release/OmniDownloader_桌面独立版.zip`](windows/release/)，免环境解压即用，附带多国语言说明 |
 | **🌐 Web 网页纯后台版** | Windows 电脑，支持局域网内任意手机/平板浏览器访问 | 轻量托盘守护进程 + 本地 Web 服务 + 内置 FFmpeg | 下载 [`windows/release/OmniDownloader_网页纯后台版.zip`](windows/release/)，静默常驻托盘，支持浏览器原生接管下载 |
@@ -34,7 +37,7 @@
 
 ## 🚀 核心特性
 
-### 1. 🌐 主流音视频平台原生全支持
+### 1. 🌐 原生平台与通用 HTML5 解析（支持范围因平台而异）
 - **哔哩哔哩 (Bilibili)**：
   - 支持单视频、多 P 分集与番剧/电视剧 UGC 合集批量识别；
   - 原生 DASH 双流解耦与自适应流优选算法（优先 4K/1080P60 极清画质与兼容性最佳的 AVC 编码）；
@@ -43,17 +46,17 @@
   - **抖音 (Douyin)**：支持分享口令与短链解析，自动重定向嗅探原画无水印直链；
   - **快手 (Kuaishou)**：短视频直链免水印嗅探；
   - **小红书 (Xiaohongshu)**：图文笔记及超清视频极速抓取。
-- **米哈游百科 / 米游社**：Android 原生读取公开百科词条视频和社区帖子多清晰度视频，无需登录；视频签名在实际下载时自动重新获取。
+- **米哈游百科 / 部分米游社公开帖子视频**：Android 原生解析公开词条与部分含 VOD 的社区帖子，可选源画质；需要登录、专用播放器或非公开视频不保证支持。
 - **国际主流媒体全方位覆盖**：
-  - **YouTube**：支持 4K/2K/1080P 超高清流与 Shorts 短视频；
+  - **YouTube**：本 Android 轻量分支尚无可靠原生适配；其他端的既有能力不等于本 APK 支持。
   - **TikTok**：免登录绕过 WAF，提取 1080P 原生无水印直链；
-  - **X (Twitter) / Instagram / Facebook / Pinterest**：完整通用媒体解析引擎。
+  - **X / Instagram / Facebook / Pinterest**：本 Android 轻量分支尚未接入稳定专用解析；公开 HTML5 网页可尝试通用媒体提取。
 
 ### 2. 🎬 丰富的导出与转码模式
 - **音画合流 (MP4)**：自由挑选目标清晰度（4K、2K、1080P、720P），毫秒级无损合并音视频轨道。
 - **仅纯视频画面**：自动剥离音轨，生成无声纯净视频，专为视频混剪与鬼畜二创设计。
-- **提取高保真音频**：提取原轨并支持转码为 **MP3 (最高 320kbps)**、**M4A**、**FLAC 无损**、**OPUS**。
-- **动态图 (GIF)**：基于双通道调色板优化算法，生成高清晰度免播放器预览动图。
+- **提取音频**：Android 轻量版仅提供兼容轨道的 **M4A 无损封装**，不含 MP3/FLAC/OPUS 编码器。
+- **动态图 (GIF)**：Android 轻量版暂不提供 GIF 转码。
 - **保存高清封面**：一键保存视频原始超清封面图并同步至系统相册。
 
 ### 3. 📦 智能合集聚合与分集抽屉设计
