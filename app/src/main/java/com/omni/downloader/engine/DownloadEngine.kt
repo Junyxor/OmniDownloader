@@ -121,6 +121,12 @@ object DownloadEngine {
 
         Log.d(TAG, "开始解析: site=$site, cleanUrl=$cleanUrl")
 
+        // Native miHoYo public APIs: Wiki HTML video nodes and Miyoushe VOD resolutions.
+        // Avoid sending these pages through yt-dlp, which cannot use the signed VOD APIs.
+        if (MihoyoVideoExtractor.isSupported(cleanUrl)) {
+            return@withContext MihoyoVideoExtractor.extract(cleanUrl)
+        }
+
         // 1. 哔哩哔哩优先走原生直连解析 (免 Python 依赖，毫秒级，100% 成功率)
         if (site == "哔哩哔哩") {
             val directResult = BilibiliDirectExtractor.extract(cleanUrl)
@@ -363,6 +369,13 @@ object DownloadEngine {
                 proxyUrl = proxyUrl,
                 publicDir = publicDir,
                 onProgressUpdate = onProgressUpdate
+            )
+        }
+
+        // Fresh signed community links are retrieved at execution time, not persisted.
+        if (MihoyoVideoExtractor.isSupported(cleanUrl)) {
+            return@withContext MihoyoVideoExtractor.download(
+                context, task, stagingDir, publicDir, onProgressUpdate, proxyUrl
             )
         }
 

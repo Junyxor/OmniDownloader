@@ -46,7 +46,9 @@ object UrlSniffer {
      */
     fun identifySite(url: String): String {
         val lower = url.lowercase()
+        val mihoyoSource = MihoyoVideoExtractor.parseSource(url)
         return when {
+            mihoyoSource != null -> if (mihoyoSource.type == MihoyoVideoExtractor.SourceType.WIKI) "米哈游百科" else "米游社"
             lower.contains("bilibili.com") || lower.contains("b23.tv") || lower.startsWith("bv") || lower.startsWith("av") || BilibiliDirectExtractor.extractBvid(url) != null -> "哔哩哔哩"
             lower.contains("youtube.com") || lower.contains("youtu.be") -> "YouTube"
             lower.contains("twitter.com") || lower.contains("x.com") -> "X (Twitter)"

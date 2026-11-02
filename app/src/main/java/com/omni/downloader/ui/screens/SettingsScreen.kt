@@ -75,6 +75,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -879,26 +880,32 @@ private fun SettingDropdown(
             )
         }
 
+        // Fixed-width popup and a trailing check keep every option label aligned.
+        // A leading check would shift the active language 24dp to the right.
         DropdownMenu(
             expanded = expanded,
-            onDismissRequest = { expanded = false }
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.width(176.dp),
+            offset = DpOffset(0.dp, 4.dp)
         ) {
             options.forEach { (code, label) ->
                 DropdownMenuItem(
+                    modifier = Modifier.fillMaxWidth().testTag("settings_dropdown_option_" + code),
                     text = {
                         Text(
                             text = label,
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = if (code == currentValue) FontWeight.Bold else FontWeight.Normal,
                             color = if (code == currentValue) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1
                         )
                     },
                     onClick = {
-                        onSelect(code)
                         expanded = false
+                        onSelect(code)
                     },
-                    leadingIcon = if (code == currentValue) {
+                    trailingIcon = if (code == currentValue) {
                         {
                             Icon(
                                 imageVector = Icons.Outlined.Check,
