@@ -258,7 +258,7 @@ fun AddRelaySiteDialog(
 
                     if (cleanName.isBlank() || cleanUrl.isBlank()) {
                         Toast.makeText(context, "请完整填写网站名称与网址", Toast.LENGTH_SHORT).show()
-                        return@Button
+                        return@GlassButton
                     }
 
                     if (!cleanUrl.startsWith("http://", ignoreCase = true) &&
