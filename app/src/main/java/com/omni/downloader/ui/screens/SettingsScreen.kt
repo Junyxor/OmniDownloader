@@ -1,5 +1,11 @@
 package com.omni.downloader.ui.screens
 
+import com.omni.downloader.ui.design.GlassButton
+import com.omni.downloader.ui.design.GlassOutlinedButton
+import com.omni.downloader.ui.design.GlassTextButton
+import com.omni.downloader.ui.design.GlassIconButton
+import com.omni.downloader.ui.design.GlassSuggestionChip
+
 import android.net.Uri
 import android.content.Intent
 import android.os.Environment
@@ -42,21 +48,21 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.SystemUpdateAlt
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+
 import androidx.compose.material3.ButtonDefaults
 import com.omni.downloader.ui.design.TabProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SuggestionChip
+
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
@@ -294,7 +300,7 @@ fun SettingsScreen(
                             }
 
                             Spacer(modifier = Modifier.height(12.dp))
-                            Button(
+                            GlassButton(
                                 onClick = { viewModel.updateEngine(context) },
                                 enabled = !isUpdatingEngine,
                                 modifier = Modifier
@@ -351,7 +357,7 @@ fun SettingsScreen(
                                 horizontalArrangement = Arrangement.End
                             ) {
                                 if (savedProxyUrl.isNotEmpty()) {
-                                    OutlinedButton(
+                                    GlassOutlinedButton(
                                         onClick = {
                                             proxyInput = ""
                                             viewModel.updateProxyUrl("")
@@ -365,7 +371,7 @@ fun SettingsScreen(
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
-                                Button(
+                                GlassButton(
                                     onClick = {
                                         viewModel.updateProxyUrl(proxyInput)
                                         Toast.makeText(context, strings.proxySaved, Toast.LENGTH_SHORT).show()
@@ -390,7 +396,7 @@ fun SettingsScreen(
                             title = "${strings.relaySitesSection} (${relaySites.size})",
                             subtitle = strings.relaySitesDesc,
                             action = {
-                                Button(
+                                GlassButton(
                                     onClick = {
                                         if (!hasShownRelayCompatTip) {
                                             showCompatDialog = true
@@ -462,7 +468,7 @@ fun SettingsScreen(
                             }
 
                             Spacer(modifier = Modifier.height(10.dp))
-                            Button(
+                            GlassButton(
                                 onClick = { showBilibiliLoginSheet = true },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -500,7 +506,7 @@ fun SettingsScreen(
                                 horizontalArrangement = Arrangement.End
                             ) {
                                 if (savedBilibiliCookie.isNotEmpty()) {
-                                    OutlinedButton(
+                                    GlassOutlinedButton(
                                         onClick = {
                                             bilibiliCookieInput = ""
                                             viewModel.clearBilibiliCookie()
@@ -514,7 +520,7 @@ fun SettingsScreen(
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
-                                Button(
+                                GlassButton(
                                     onClick = {
                                         viewModel.updateBilibiliCookie(bilibiliCookieInput)
                                         Toast.makeText(context, strings.bilibiliCookieSaved, Toast.LENGTH_SHORT).show()
@@ -576,7 +582,7 @@ fun SettingsScreen(
                                 horizontalArrangement = Arrangement.End
                             ) {
                                 if (savedDownloadPath.isNotBlank()) {
-                                    OutlinedButton(
+                                    GlassOutlinedButton(
                                         onClick = {
                                             viewModel.resetDownloadPath()
                                             Toast.makeText(context, strings.pathReset, Toast.LENGTH_SHORT).show()
@@ -589,7 +595,7 @@ fun SettingsScreen(
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
-                                Button(
+                                GlassButton(
                                     onClick = { showPathDialog = true },
                                     modifier = Modifier.height(36.dp),
                                     contentPadding = PaddingValues(horizontal = 12.dp),
@@ -621,7 +627,7 @@ fun SettingsScreen(
                                 }
                             }
                             Spacer(modifier = Modifier.height(10.dp))
-                            OutlinedButton(
+                            GlassOutlinedButton(
                                 onClick = {
                                     try {
                                         context.cacheDir?.deleteRecursively()
@@ -674,7 +680,7 @@ fun SettingsScreen(
                         }
                     }
                     item(key = "settings_github") {
-                        OutlinedButton(
+                        GlassOutlinedButton(
                             onClick = {
                                 val url = "https://github.com/baishu136/OmniDownloader"
                                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
@@ -722,7 +728,7 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(10.dp))
-                    OutlinedButton(
+                    GlassOutlinedButton(
                         onClick = {
                             dirPickerLauncher.launch(null)
                             showPathDialog = false
@@ -749,15 +755,15 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        SuggestionChip(
+                        GlassSuggestionChip(
                             onClick = { inputPath = defaultDownload },
                             label = { Text(strings.folderDefault, fontSize = 11.sp) }
                         )
-                        SuggestionChip(
+                        GlassSuggestionChip(
                             onClick = { inputPath = moviesDir },
                             label = { Text(strings.folderMovies, fontSize = 11.sp) }
                         )
-                        SuggestionChip(
+                        GlassSuggestionChip(
                             onClick = { inputPath = musicDir },
                             label = { Text(strings.folderMusic, fontSize = 11.sp) }
                         )
@@ -774,7 +780,7 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                Button(
+                GlassButton(
                     onClick = {
                         val clean = inputPath.trim()
                         if (clean.isNotEmpty()) {
@@ -788,7 +794,7 @@ fun SettingsScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showPathDialog = false }) {
+                GlassTextButton(onClick = { showPathDialog = false }) {
                     Text(strings.cancel)
                 }
             }
@@ -844,7 +850,7 @@ fun SettingsScreen(
                 Text(text = String.format(strings.deleteRelaySiteConfirmMessage, targetSite.name))
             },
             confirmButton = {
-                Button(
+                GlassButton(
                     onClick = {
                         viewModel.removeRelaySite(targetSite.id)
                         siteToDelete = null
@@ -857,7 +863,7 @@ fun SettingsScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { siteToDelete = null }) {
+                GlassTextButton(onClick = { siteToDelete = null }) {
                     Text(strings.cancel)
                 }
             }
@@ -879,7 +885,7 @@ private fun SettingDropdown(
     val currentLabel = options.firstOrNull { it.first == currentValue }?.second ?: fallbackLabel
 
     Box {
-        OutlinedButton(
+        GlassOutlinedButton(
             onClick = { expanded = true },
             modifier = Modifier.height(34.dp),
             contentPadding = PaddingValues(horizontal = 10.dp),
@@ -1036,7 +1042,7 @@ private fun RelaySiteSettingsItem(
                 )
             }
 
-            IconButton(
+            GlassIconButton(
                 onClick = onDelete,
                 modifier = Modifier.size(30.dp)
             ) {
