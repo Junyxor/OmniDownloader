@@ -18,6 +18,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import com.omni.downloader.ui.design.LocalGlassEnabled
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -146,6 +147,14 @@ fun OmniDownloaderTheme(
         else -> LightColorScheme
     }
 
+    // V2: popup surfaces, menu panes and regular components share the same
+    // translucent layer without allocating individual blur effects.
+    val effectiveScheme = if (LocalGlassEnabled.current) colorScheme.copy(
+        surface = if (darkTheme) Color(0xD920293A) else Color(0xDDFBFDFF),
+        surfaceVariant = if (darkTheme) Color(0xC23D475B) else Color(0xD8EAF0FA),
+        outlineVariant = if (darkTheme) Color(0xFF7C859D) else Color(0xFFA7B9D5)
+    ) else colorScheme
+
     val statusColors = remember(darkTheme) {
         if (darkTheme) {
             OmniStatusColors(
@@ -180,7 +189,7 @@ fun OmniDownloaderTheme(
 
     CompositionLocalProvider(LocalStatusColors provides statusColors) {
         MaterialTheme(
-            colorScheme = colorScheme,
+            colorScheme = effectiveScheme,
             typography = Typography,
             shapes = OmniShapes,
             content = content
