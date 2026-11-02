@@ -15,6 +15,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -26,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -46,6 +48,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import com.omni.downloader.ui.design.LocalTabActive
+import com.omni.downloader.ui.design.LocalGlassEnabled
+import com.omni.downloader.ui.design.OmniGlassBackdrop
+import com.omni.downloader.ui.design.OmniGlassDock
 import com.omni.downloader.ui.design.RetainedTabHost
 import com.omni.downloader.engine.UrlSniffer
 import com.omni.downloader.ui.localization.AppStrings
@@ -95,6 +100,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val currentLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
             val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+            val glassEnabled by viewModel.glassEnabled.collectAsStateWithLifecycle()
             val darkTheme = when (themeMode) {
                 "light" -> false
                 "dark" -> true
@@ -102,7 +108,7 @@ class MainActivity : ComponentActivity() {
             }
             val appStrings = remember(currentLanguage) { resolveAppStrings(currentLanguage) }
 
-            CompositionLocalProvider(LocalAppStrings provides appStrings) {
+            CompositionLocalProvider(LocalAppStrings provides appStrings, LocalGlassEnabled provides glassEnabled) {
                 OmniDownloaderTheme(darkTheme = darkTheme) {
                     val snackbarHostState = remember { SnackbarHostState() }
                     val message by viewModel.message.collectAsStateWithLifecycle()
@@ -116,11 +122,12 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    OmniGlassBackdrop {
                     Scaffold(
                         modifier = Modifier
                             .fillMaxSize()
                             .imePadding(),
-                        containerColor = MaterialTheme.colorScheme.background,
+                        containerColor = if (glassEnabled) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.background,
                         snackbarHost = {
                             SnackbarHost(
                                 hostState = snackbarHostState,
@@ -141,6 +148,7 @@ class MainActivity : ComponentActivity() {
                             viewModel = viewModel,
                             modifier = Modifier.padding(innerPadding)
                         )
+                    }
                     }
                 }
             }
@@ -163,6 +171,18 @@ class MainActivity : ComponentActivity() {
                 NavItem(1, Icons.Outlined.Download, appStrings.navTasks),
                 NavItem(2, Icons.Outlined.Settings, appStrings.navSettings)
             )
+        }
+
+        if (LocalGlassEnabled.current) {
+            Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 9.dp)) {
+                OmniGlassDock(
+                    selectedIndex = currentTab,
+                    icons = navItems.map { it.icon },
+                    labels = navItems.map { it.label },
+                    onSelect = onTabSelected
+                )
+            }
+            return
         }
 
         NavigationBar(
