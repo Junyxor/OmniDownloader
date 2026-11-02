@@ -120,6 +120,12 @@ object DownloadEngine {
         val site = UrlSniffer.identifySite(cleanUrl)
 
         Log.d(TAG, "开始解析: site=$site, cleanUrl=$cleanUrl")
+        // 图文不能经过旧视频解析器/yt-dlp 兜底，避免得到错误作品或无效 MP4。
+        if (site == "抖音" && DomesticDirectExtractor.isDouyinImagePostUrl(cleanUrl)) {
+            return@withContext Result.failure(UnsupportedOperationException(
+                "识别为抖音图文作品；图集详情接口需要有效会话与签名，当前尚未打通，不能作为视频下载"
+            ))
+        }
 
         // 1. 哔哩哔哩优先走原生直连解析 (免 Python 依赖，毫秒级，100% 成功率)
         if (site == "哔哩哔哩") {
@@ -348,6 +354,11 @@ object DownloadEngine {
         cancelledTaskIds.remove(task.id)
         val cleanUrl = UrlSniffer.sanitizeAndResolveUrl(task.url)
         val site = UrlSniffer.identifySite(cleanUrl)
+        if (site == "抖音" && DomesticDirectExtractor.isDouyinImagePostUrl(cleanUrl)) {
+            return@withContext Result.failure(UnsupportedOperationException(
+                "该任务是抖音图文作品，禁止执行视频下载；请等待独立图集解析及 Gopeed/aria2 下载适配器"
+            ))
+        }
 
         val publicDir = getDownloadDir(context).apply { mkdirs() }
         val stagingDir = File(context.cacheDir, "staging").apply { mkdirs() }
