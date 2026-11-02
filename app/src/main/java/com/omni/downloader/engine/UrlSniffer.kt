@@ -131,18 +131,21 @@ object UrlSniffer {
             }
         }
 
-        // 专门处理抖音：规整为标准视频 URL，杜绝 iesdouyin.com/share/video/ 被误判或导致解析报错
+        // 抖音：保留作品类型。/note/ 和 /share/slides/ 是图文，不能强制改成 /video/。
         if (cleanUrl.contains("douyin.com") || cleanUrl.contains("iesdouyin.com")) {
-            val douyinPattern = Pattern.compile("""(?:video|note)/(\d+)""")
+            val douyinPattern = Pattern.compile("""/(video|note|slides)/(\d{18,20})(?:[/?#]|$)""", Pattern.CASE_INSENSITIVE)
             val matcher = douyinPattern.matcher(cleanUrl)
             if (matcher.find()) {
-                val videoId = matcher.group(1)
-                if (!videoId.isNullOrEmpty()) {
-                    cleanUrl = "https://www.douyin.com/video/$videoId"
+                val workId = matcher.group(2)
+                if (!workId.isNullOrEmpty()) {
+                    val route = when (matcher.group(1)?.lowercase()) {
+                        "note", "slides" -> "note"
+                        else -> "video"
+                    }
+                    cleanUrl = "https://www.douyin.com/$route/$workId"
                 }
             }
         }
-
         // 专门处理 TikTok：短链跳转后规整为标准视频 URL
         if (cleanUrl.contains("tiktok.com")) {
             val tiktokPattern = Pattern.compile("""/video/(\d+)""")
