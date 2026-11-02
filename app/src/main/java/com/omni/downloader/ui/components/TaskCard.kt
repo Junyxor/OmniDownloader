@@ -32,6 +32,7 @@ import androidx.compose.material.icons.outlined.Gif
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material.icons.outlined.Visibility
