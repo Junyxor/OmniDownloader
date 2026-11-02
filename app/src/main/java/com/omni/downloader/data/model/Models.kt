@@ -44,6 +44,20 @@ data class FormatOption(
 )
 
 /**
+ * A single image in a platform gallery. Mirrors stay available for later download
+ * failover; Live Photo clips are optional and are not silently downloaded.
+ */
+@Serializable
+data class GalleryImage(
+    val index: Int,
+    val url: String,
+    val mirrors: List<String> = emptyList(),
+    val width: Int = 0,
+    val height: Int = 0,
+    val liveVideoUrl: String? = null
+)
+
+/**
  * 视频解析出来的元数据
  */
 @Serializable
@@ -57,7 +71,8 @@ data class VideoMetadata(
     val isGif: Boolean = false,
     val availableVideoFormats: List<FormatOption> = emptyList(),
     val availableAudioFormats: List<FormatOption> = emptyList(),
-    val multiMediaList: List<VideoMetadata> = emptyList() // 包含推文中的全部独立视频
+    val multiMediaList: List<VideoMetadata> = emptyList(), // 包含推文中的全部独立视频
+    val imageAssets: List<GalleryImage> = emptyList() // 图集独立资源，不能作为视频格式
 )
 
 /**
