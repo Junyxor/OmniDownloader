@@ -70,25 +70,32 @@ object DouyinStructuredParser {
     private fun images(item: JSONObject): List<GalleryImage>? {
         val photoInfo = item.optJSONObject("image_post_info")
             ?: item.optJSONObject("imagePostInfo")
-        val list = photoInfo?.optJSONArray("images")
-            ?: item.optJSONArray("images")
+        // The web detail endpoint uses top-level images[] for original media.
+        // Legacy mobile shapes under image_post_info remain a fallback.
+        val list = item.optJSONArray("images")
+            ?: photoInfo?.optJSONArray("images")
             ?: item.optJSONArray("image_list")
             ?: return emptyList()
         if (list.length() == 0 || list.length() > 100) return null
         return (0 until list.length()).map { i ->
             val row = list.optJSONObject(i) ?: return null
-            val primary = row.optJSONObject("display_image")
-                ?: row.optJSONObject("image_url")
-                ?: row.optJSONObject("url")
-                ?: row
-            val urls = urlList(primary).ifEmpty { urlList(row) }.distinct()
+            val originals = urlList(row) +
+                urlList(row.optJSONObject("origin_image")) +
+                urlList(row.optJSONObject("download_url"))
+            val previews = urlList(row.optJSONObject("image_url")) +
+                urlList(row.optJSONObject("url")) +
+                urlList(row.optJSONObject("display_image"))
+            // Select the original-asset list first, preserving alternate CDN
+            // hosts as mirrors; preview links are last-resort fallbacks only.
+            val urls = (originals + previews).distinct()
             if (urls.isEmpty()) return null
             val clip = row.optJSONObject("video")?.optJSONObject("play_addr")
                 ?.let(::urlList)?.firstOrNull()
+            val dimensions = row.optJSONObject("display_image") ?: row
             GalleryImage(
                 index = i, url = urls.first(), mirrors = urls.drop(1),
-                width = row.optInt("width", primary.optInt("width", 0)),
-                height = row.optInt("height", primary.optInt("height", 0)),
+                width = row.optInt("width", dimensions.optInt("width", 0)),
+                height = row.optInt("height", dimensions.optInt("height", 0)),
                 liveVideoUrl = clip
             )
         }
@@ -105,7 +112,7 @@ object DouyinStructuredParser {
         val isNote = source.contains("/note/") || source.contains("/slide") ||
             item.optInt("aweme_type", -1) == 68 ||
             item.optJSONObject("image_post_info") != null
-        if (pictures.isNotEmpty() && isNote) {
+        if (pictures.isNotEmpty()) {
             val children = pictures.map { picture ->
                 VideoMetadata(
                     url = source.substringBefore('#') + "#omni_douyin_image=${picture.index}",
@@ -124,6 +131,8 @@ object DouyinStructuredParser {
             )
         }
 
+        // An image-only work with unavailable media data is not a video.
+        if (isNote) return null
         val video = item.optJSONObject("video") ?: return null
         val cover = urlList(video.optJSONObject("origin_cover")).firstOrNull()
             ?: urlList(video.optJSONObject("cover")).firstOrNull().orEmpty()
