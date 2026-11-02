@@ -197,6 +197,7 @@ class SettingsRepository private constructor(context: Context) {
         private const val KEY_HAS_PROMPTED_BILIBILI_LOGIN = "key_has_prompted_bilibili_login"
         private const val KEY_APP_LANGUAGE = "key_app_language"
         private const val KEY_THEME_MODE = "key_theme_mode"
+        private const val KEY_GLASS_ENABLED = "key_liquid_glass_enabled"
         private const val KEY_RELAY_SITES = "key_relay_sites"
         private const val KEY_HAS_SHOWN_RELAY_COMPAT_TIP = "key_has_shown_relay_compat_tip"
         private const val KEY_APP_CONFIG_VERSION = "key_app_config_version"
