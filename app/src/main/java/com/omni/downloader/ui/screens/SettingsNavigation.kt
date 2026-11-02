@@ -1,6 +1,12 @@
 package com.omni.downloader.ui.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import com.omni.downloader.ui.design.LocalGlassEnabled
+import com.omni.downloader.ui.design.glassChrome
+import com.omni.downloader.ui.design.GlassIconButton
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -67,12 +73,12 @@ internal fun SettingsToolbar(page: SettingsPage, onBack: () -> Unit) {
     TopAppBar(
         title = { Text(page.title(strings), maxLines = 1, overflow = TextOverflow.Ellipsis) },
         navigationIcon = {
-            if (page != SettingsPage.ROOT) IconButton(onClick = onBack) {
+            if (page != SettingsPage.ROOT) GlassIconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, strings.navigateBack)
             }
         },
         windowInsets = WindowInsets(0, 0, 0, 0),
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = if (LocalGlassEnabled.current) Color.Transparent else MaterialTheme.colorScheme.background)
     )
 }
 
@@ -84,8 +90,11 @@ internal fun SettingsCategoryRow(page: SettingsPage, onClick: () -> Unit) {
         supportingContent = { Text(page.summary(strings), maxLines = 2, overflow = TextOverflow.Ellipsis) },
         leadingContent = { Icon(page.icon, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
         trailingContent = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(20.dp)) },
-        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.background),
-        modifier = Modifier.testTag("settings_category_" + page.name)
+        colors = ListItemDefaults.colors(containerColor = if (LocalGlassEnabled.current) Color.Transparent else MaterialTheme.colorScheme.background),
+        modifier = Modifier
+            .padding(horizontal = if (LocalGlassEnabled.current) 14.dp else 0.dp, vertical = if (LocalGlassEnabled.current) 5.dp else 0.dp)
+            .glassChrome(RoundedCornerShape(20.dp))
+            .testTag("settings_category_" + page.name)
             .clickable(role = Role.Button, onClick = onClick)
     )
 }

@@ -1,5 +1,8 @@
 package com.omni.downloader.ui.components
 
+import com.omni.downloader.ui.design.GlassButton
+import com.omni.downloader.ui.design.GlassIconButton
+
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -27,11 +30,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.OpenInBrowser
-import androidx.compose.material3.Button
+
 import androidx.compose.material3.ButtonDefaults
 import com.omni.downloader.ui.design.TabProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -47,6 +50,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.omni.downloader.data.model.RelaySite
+import com.omni.downloader.ui.design.LocalGlassEnabled
+import com.omni.downloader.ui.design.glassPanelColor
+import com.omni.downloader.ui.design.glassRimBrush
+import com.omni.downloader.ui.design.isDarkGlass
 import java.util.Locale
 
 /**
@@ -110,8 +117,8 @@ fun RelaySiteCard(
                 if (isResolving) onCancelResolve() else onStartResolve(site)
             },
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(if (isResolving) 1.4.dp else 1.dp, borderColor),
+        color = if (LocalGlassEnabled.current) glassPanelColor(isDarkGlass()) else MaterialTheme.colorScheme.surface,
+        border = if (LocalGlassEnabled.current) BorderStroke(1.dp, glassRimBrush(isDarkGlass())) else BorderStroke(if (isResolving) 1.4.dp else 1.dp, borderColor),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
@@ -162,7 +169,7 @@ fun RelaySiteCard(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                Button(
+                GlassButton(
                     onClick = {
                         if (isResolving) onCancelResolve() else onStartResolve(site)
                     },
@@ -203,7 +210,7 @@ fun RelaySiteCard(
 
                 Spacer(modifier = Modifier.width(2.dp))
 
-                IconButton(
+                GlassIconButton(
                     onClick = { onOpenManualBrowser(site) },
                     modifier = Modifier.size(48.dp)
                 ) {
@@ -216,7 +223,7 @@ fun RelaySiteCard(
                 }
 
                 if (onDeleteSite != null) {
-                    IconButton(
+                    GlassIconButton(
                         onClick = { onDeleteSite(site.id) },
                         modifier = Modifier.size(48.dp)
                     ) {

@@ -1,5 +1,8 @@
 package com.omni.downloader.ui.screens
 
+import com.omni.downloader.ui.design.GlassTextButton
+import com.omni.downloader.ui.design.GlassIconButton
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -28,10 +31,10 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -52,6 +55,7 @@ import com.omni.downloader.ui.model.TaskDisplayItem
 import com.omni.downloader.ui.design.RetainedTabHost
 import com.omni.downloader.ui.design.OmniMotion
 import com.omni.downloader.ui.design.OmniSegmentedTabs
+import com.omni.downloader.ui.design.LocalGlassEnabled
 import com.omni.downloader.ui.localization.LocalAppStrings
 import com.omni.downloader.ui.viewmodel.MainViewModel
 
@@ -107,7 +111,7 @@ fun TasksScreen(
                     enter = fadeIn(tween(OmniMotion.NORMAL)) + scaleIn(initialScale = 0.8f),
                     exit = fadeOut(tween(OmniMotion.FAST)) + scaleOut(targetScale = 0.8f)
                 ) {
-                    IconButton(onClick = { showClearDialog = true }) {
+                    GlassIconButton(onClick = { showClearDialog = true }) {
                         Icon(
                             imageVector = Icons.Outlined.DeleteSweep,
                             contentDescription = strings.clearCompleted,
@@ -163,7 +167,7 @@ fun TasksScreen(
                 )
             },
             confirmButton = {
-                TextButton(
+                GlassTextButton(
                     onClick = {
                         showClearDialog = false
                         if (isDownloadingPage) {
@@ -181,7 +185,7 @@ fun TasksScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showClearDialog = false }) {
+                GlassTextButton(onClick = { showClearDialog = false }) {
                     Text(text = strings.cancel)
                 }
             }

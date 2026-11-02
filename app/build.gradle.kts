@@ -95,6 +95,11 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
+    // Bounded, real backdrop blur for the floating glass navigation dock.
+    // 0.7.1 is compatible with the Kotlin 1.9.23 / Compose 1.6.x toolchain.
+    // Haze is Apache-2.0, and only one glass child is used on scrollable screens.
+    implementation("dev.chrisbanes.haze:haze:0.7.1")
+
     // Image Loading (Coil with Animated GIF & Video Frame Decoder support)
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("io.coil-kt:coil-gif:2.6.0")

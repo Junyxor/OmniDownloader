@@ -1,5 +1,7 @@
 package com.omni.downloader.ui.components
 
+import com.omni.downloader.ui.design.GlassIconButton
+
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
@@ -60,14 +62,14 @@ fun RelayBrowserDialog(
             Surface(shadowElevation = 3.dp) {
                 Column {
                     Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { back() }) { Icon(if (canGoBack) Icons.AutoMirrored.Outlined.ArrowBack else Icons.Outlined.Close, "返回") }
+                        GlassIconButton(onClick = { back() }) { Icon(if (canGoBack) Icons.AutoMirrored.Outlined.ArrowBack else Icons.Outlined.Close, "返回") }
                         Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
                             Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
                             Text(Uri.parse(currentUrl).host.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        if (initialVideoUrl.isNotBlank()) IconButton(onClick = { view?.let { RelayAutomation.fill(it) } }) { Icon(Icons.Outlined.Bolt, "填入链接") }
-                        IconButton(onClick = { view?.reload() }) { Icon(Icons.Outlined.Refresh, "刷新") }
-                        IconButton(onClick = {
+                        if (initialVideoUrl.isNotBlank()) GlassIconButton(onClick = { view?.let { RelayAutomation.fill(it) } }) { Icon(Icons.Outlined.Bolt, "填入链接") }
+                        GlassIconButton(onClick = { view?.reload() }) { Icon(Icons.Outlined.Refresh, "刷新") }
+                        GlassIconButton(onClick = {
                             try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl))) }
                             catch (_: android.content.ActivityNotFoundException) { Toast.makeText(context, "无法打开外部浏览器", Toast.LENGTH_SHORT).show() }
                         }) { Icon(Icons.Outlined.OpenInBrowser, "在外部浏览器打开") }

@@ -1,5 +1,12 @@
 package com.omni.downloader.ui.components
 
+import com.omni.downloader.ui.design.GlassButton
+import com.omni.downloader.ui.design.GlassTextButton
+import com.omni.downloader.ui.design.GlassIconButton
+import com.omni.downloader.ui.design.LocalGlassEnabled
+import com.omni.downloader.ui.design.glassPanelColor
+import com.omni.downloader.ui.design.isDarkGlass
+
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
@@ -88,7 +95,7 @@ fun CollectionTaskCard(
             width = 1.dp,
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
         ),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = if (LocalGlassEnabled.current) glassPanelColor(isDarkGlass()) else MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -283,7 +290,7 @@ fun CollectionTaskCard(
 
                             when (subTask.status) {
                                 TaskStatus.COMPLETED -> {
-                                    IconButton(
+                                    GlassIconButton(
                                         onClick = {
                                             openMediaFile(context, subTask.localFilePath, subTask.downloadType)
                                         },
@@ -306,7 +313,7 @@ fun CollectionTaskCard(
                                     )
                                 }
                                 TaskStatus.FAILED -> {
-                                    IconButton(
+                                    GlassIconButton(
                                         onClick = { onRetryEpisode(subTask.id) },
                                         modifier = Modifier.size(28.dp)
                                     ) {
@@ -381,7 +388,7 @@ fun CollectionTaskCard(
                 }
 
                 if (isAllCompleted || hasFailed) {
-                    IconButton(
+                    GlassIconButton(
                         onClick = { showDeleteDialog = true },
                         modifier = Modifier.size(32.dp)
                     ) {
@@ -430,7 +437,7 @@ fun CollectionTaskCard(
                 }
             },
             confirmButton = {
-                Button(
+                GlassButton(
                     onClick = {
                         onDeleteCollection(collectionId, deleteLocalFiles)
                         showDeleteDialog = false
@@ -441,7 +448,7 @@ fun CollectionTaskCard(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
+                GlassTextButton(onClick = { showDeleteDialog = false }) {
                     Text(strings.cancel)
                 }
             }
@@ -464,7 +471,7 @@ fun CollectionTaskCard(
                 )
             },
             confirmButton = {
-                Button(
+                GlassButton(
                     onClick = {
                         onCancelCollection(collectionId)
                         showCancelDialog = false
@@ -475,7 +482,7 @@ fun CollectionTaskCard(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCancelDialog = false }) {
+                GlassTextButton(onClick = { showCancelDialog = false }) {
                     Text(strings.cancel)
                 }
             }

@@ -100,6 +100,7 @@ half4 main(float2 p) {
     c = mix(c, half3(1.0), half(whiteRim));
     c *= half(1.0 - (1.0 - directional) * bevel * (0.05 + darkness * 0.025));
 
-    return half4(c, 0.97);
+    // Keep the captured backdrop visible through the selected lens.
+    return half4(c, half(0.40 + 0.22 * bevel));
 }
 """.trimIndent()

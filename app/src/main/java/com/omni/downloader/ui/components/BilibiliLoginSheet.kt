@@ -1,5 +1,7 @@
 package com.omni.downloader.ui.components
 
+import com.omni.downloader.ui.design.GlassIconButton
+
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.view.ViewGroup
@@ -113,7 +115,7 @@ fun BilibiliLoginSheet(
                             )
                         }
                     }
-                    IconButton(onClick = onDismissRequest) {
+                    GlassIconButton(onClick = onDismissRequest) {
                         Icon(
                             imageVector = Icons.Outlined.Close,
                             contentDescription = strings.bilibiliCloseDialog

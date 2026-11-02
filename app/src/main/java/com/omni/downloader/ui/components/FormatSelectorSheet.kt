@@ -1,5 +1,8 @@
 package com.omni.downloader.ui.components
 
+import com.omni.downloader.ui.design.GlassButton
+import com.omni.downloader.ui.design.GlassOutlinedButton
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import com.omni.downloader.ui.design.LocalGlassEnabled
+import com.omni.downloader.ui.design.glassPanelColor
+import com.omni.downloader.ui.design.isDarkGlass
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -79,7 +85,7 @@ fun FormatSelectorSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = if (LocalGlassEnabled.current) glassPanelColor(isDarkGlass()) else MaterialTheme.colorScheme.surface
     ) {
         Column(
             modifier = Modifier
@@ -591,7 +597,7 @@ fun FormatSelectorSheet(
                             else -> String.format(strings.batchDownloadVideos, count, resLabel) + coverSuffix
                         }
 
-                        Button(
+                        GlassButton(
                             onClick = {
                                 if (selectedEpisodes.isNotEmpty()) {
                                     onDownloadSelectedMultiMedia(selectedEpisodes, saveCoverWithDownload)
@@ -614,7 +620,7 @@ fun FormatSelectorSheet(
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedButton(
+                        GlassOutlinedButton(
                             onClick = {
                                 onDownloadSelectedMultiMedia(metadata.multiMediaList.indices.toSet(), saveCoverWithDownload)
                             },
@@ -632,7 +638,7 @@ fun FormatSelectorSheet(
                             )
                         }
                     } else {
-                        Button(
+                        GlassButton(
                             onClick = { onConfirmDownload(saveCoverWithDownload) },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -664,7 +670,7 @@ fun FormatSelectorSheet(
 
                         if (metadata.multiMediaList.size > 1) {
                             Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedButton(
+                            GlassOutlinedButton(
                                 onClick = { isCollectionMode = true },
                                 modifier = Modifier
                                     .fillMaxWidth()

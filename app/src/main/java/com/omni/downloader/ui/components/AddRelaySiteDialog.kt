@@ -1,5 +1,9 @@
 package com.omni.downloader.ui.components
 
+import com.omni.downloader.ui.design.GlassButton
+import com.omni.downloader.ui.design.GlassTextButton
+import com.omni.downloader.ui.design.GlassIconButton
+
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -137,7 +141,7 @@ fun AddRelaySiteDialog(
                             }
                             urlInput.isNotBlank() -> {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(
+                                    GlassIconButton(
                                         onClick = { triggerFetchTitle(urlInput) },
                                         modifier = Modifier.size(28.dp)
                                     ) {
@@ -148,7 +152,7 @@ fun AddRelaySiteDialog(
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
-                                    IconButton(
+                                    GlassIconButton(
                                         onClick = {
                                             urlInput = ""
                                             if (!userModifiedNameManually) {
@@ -170,7 +174,7 @@ fun AddRelaySiteDialog(
                             else -> {
                                 val clipText = clipboardManager.getText()?.text
                                 if (!clipText.isNullOrBlank()) {
-                                    IconButton(
+                                    GlassIconButton(
                                         onClick = {
                                             urlInput = clipText.trim()
                                             triggerFetchTitle(urlInput)
@@ -207,7 +211,7 @@ fun AddRelaySiteDialog(
                     },
                     trailingIcon = {
                         if (nameInput.isNotBlank()) {
-                            IconButton(
+                            GlassIconButton(
                                 onClick = {
                                     nameInput = ""
                                     userModifiedNameManually = true
@@ -247,14 +251,14 @@ fun AddRelaySiteDialog(
             }
         },
         confirmButton = {
-            Button(
+            GlassButton(
                 onClick = {
                     val cleanName = nameInput.trim()
                     var cleanUrl = urlInput.trim()
 
                     if (cleanName.isBlank() || cleanUrl.isBlank()) {
                         Toast.makeText(context, "请完整填写网站名称与网址", Toast.LENGTH_SHORT).show()
-                        return@Button
+                        return@GlassButton
                     }
 
                     if (!cleanUrl.startsWith("http://", ignoreCase = true) &&
@@ -278,7 +282,7 @@ fun AddRelaySiteDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            GlassTextButton(onClick = onDismiss) {
                 Text("取消")
             }
         }

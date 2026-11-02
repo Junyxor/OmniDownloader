@@ -1,5 +1,7 @@
 package com.omni.downloader.ui.components
 
+import com.omni.downloader.ui.design.GlassTextButton
+
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
@@ -124,7 +126,7 @@ fun LazyListScope.relaySitesItems(
 
     if (relaySites.size > 3) {
         item(key = "relay_expand_button", contentType = "relay_action_button") {
-            TextButton(
+            GlassTextButton(
                 onClick = { relayState.isExpanded = !relayState.isExpanded },
                 modifier = Modifier.fillMaxWidth(),
 
@@ -253,7 +255,7 @@ fun RelaySitesSection(
         }
 
         if (relaySites.size > 3) {
-            TextButton(
+            GlassTextButton(
                 onClick = { relayState.isExpanded = !relayState.isExpanded },
                 modifier = Modifier.fillMaxWidth(),
 

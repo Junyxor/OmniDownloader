@@ -16,6 +16,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -39,9 +40,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.haze
+import dev.chrisbanes.haze.hazeChild
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,6 +57,7 @@ import com.omni.downloader.ui.design.LocalTabActive
 import com.omni.downloader.ui.design.LocalGlassEnabled
 import com.omni.downloader.ui.design.OmniGlassBackdrop
 import com.omni.downloader.ui.design.OmniGlassDock
+import androidx.compose.ui.graphics.Color
 import com.omni.downloader.ui.design.RetainedTabHost
 import com.omni.downloader.engine.UrlSniffer
 import com.omni.downloader.ui.localization.AppStrings
@@ -122,33 +129,85 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    val hazeState = remember { HazeState() }
                     OmniGlassBackdrop {
-                    Scaffold(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .imePadding(),
-                        containerColor = if (glassEnabled) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.background,
-                        snackbarHost = {
-                            SnackbarHost(
-                                hostState = snackbarHostState,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                            )
-                        },
-                        bottomBar = {
-                            OmniNavigationBar(
-                                currentTab = currentTab,
-                                onTabSelected = { currentTab = it },
-                                appStrings = appStrings
-                            )
+                        Scaffold(
+                            modifier = Modifier.fillMaxSize().imePadding(),
+                            containerColor = if (glassEnabled) Color.Transparent else MaterialTheme.colorScheme.background,
+                            snackbarHost = {
+                                SnackbarHost(
+                                    hostState = snackbarHostState,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                )
+                            },
+                            bottomBar = {
+                                if (!glassEnabled) {
+                                    OmniNavigationBar(
+                                        currentTab = currentTab,
+                                        onTabSelected = { currentTab = it },
+                                        appStrings = appStrings
+                                    )
+                                }
+                            }
+                        ) { innerPadding ->
+                            if (glassEnabled) {
+                                // True backdrop blur: the tab content is captured once by Haze,
+                                // and only the floating dock reads the small region behind it.
+                                // It intentionally overlays the actual scrolling content.
+                                val navItems = remember(appStrings) {
+                                    listOf(
+                                        NavItem(0, Icons.Outlined.Home, appStrings.navHome),
+                                        NavItem(1, Icons.Outlined.Download, appStrings.navTasks),
+                                        NavItem(2, Icons.Outlined.Settings, appStrings.navSettings)
+                                    )
+                                }
+                                Box(Modifier.fillMaxSize().padding(innerPadding)) {
+                                    MainTabContent(
+                                        currentTab = currentTab,
+                                        onSelectTab = { currentTab = it },
+                                        viewModel = viewModel,
+                                        modifier = Modifier.fillMaxSize().haze(
+                                            state = hazeState,
+                                            style = HazeStyle(
+                                                tint = Color.Transparent,
+                                                blurRadius = 14.dp,
+                                                noiseFactor = 0.03f
+                                            )
+                                        )
+                                    )
+                                    Box(
+                                        Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .fillMaxWidth()
+                                            .navigationBarsPadding()
+                                            .padding(horizontal = 20.dp, vertical = 9.dp)
+                                            .hazeChild(
+                                                state = hazeState,
+                                                shape = androidx.compose.foundation.shape.RoundedCornerShape(34.dp),
+                                                style = HazeStyle(
+                                                    tint = if (darkTheme) Color(0x80232A3D) else Color(0x75FFFFFF),
+                                                    blurRadius = 14.dp,
+                                                    noiseFactor = 0.03f
+                                                )
+                                            )
+                                    ) {
+                                        OmniGlassDock(
+                                            selectedIndex = currentTab,
+                                            icons = navItems.map { it.icon },
+                                            labels = navItems.map { it.label },
+                                            onSelect = { currentTab = it }
+                                        )
+                                    }
+                                }
+                            } else {
+                                MainTabContent(
+                                    currentTab = currentTab,
+                                    onSelectTab = { currentTab = it },
+                                    viewModel = viewModel,
+                                    modifier = Modifier.padding(innerPadding)
+                                )
+                            }
                         }
-                    ) { innerPadding ->
-                        MainTabContent(
-                            currentTab = currentTab,
-                            onSelectTab = { currentTab = it },
-                            viewModel = viewModel,
-                            modifier = Modifier.padding(innerPadding)
-                        )
-                    }
                     }
                 }
             }

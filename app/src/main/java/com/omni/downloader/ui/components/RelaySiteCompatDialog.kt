@@ -1,5 +1,8 @@
 package com.omni.downloader.ui.components
 
+import com.omni.downloader.ui.design.GlassButton
+import com.omni.downloader.ui.design.GlassTextButton
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -75,7 +78,7 @@ fun RelaySiteCompatDialog(
             }
         },
         confirmButton = {
-            Button(
+            GlassButton(
                 onClick = onConfirm,
 
             ) {
@@ -83,7 +86,7 @@ fun RelaySiteCompatDialog(
             }
         },
         dismissButton = {
-            TextButton(
+            GlassTextButton(
                 onClick = onDismiss,
 
             ) {

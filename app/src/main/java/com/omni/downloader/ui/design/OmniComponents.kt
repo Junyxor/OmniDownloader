@@ -26,8 +26,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
+
+
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -330,7 +330,7 @@ fun OmniPillButton(
         )
     }
     if (primary) {
-        Button(
+        GlassButton(
             onClick = onClick,
             modifier = modifier.height(40.dp),
             enabled = enabled,
@@ -338,7 +338,7 @@ fun OmniPillButton(
             content = content
         )
     } else {
-        FilledTonalButton(
+        GlassFilledTonalButton(
             onClick = onClick,
             modifier = modifier,
             enabled = enabled,
