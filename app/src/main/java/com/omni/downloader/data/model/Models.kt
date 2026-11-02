@@ -117,5 +117,8 @@ data class DownloadTask(
     // 已解析的国内媒体源与请求头，独立于 UI 清晰度标签，并随任务持久化。
     val directMediaUrl: String = "",
     val directMediaHeaders: Map<String, String> = emptyMap(),
+    // CDN mirrors for a single image resource. Kept across queue persistence so each
+    // gallery item can be downloaded without signing/re-fetching the entire post.
+    val directMediaAlternates: List<String> = emptyList(),
     val parserId: String = "" // persistent extractor identity for correct task resume
 )
