@@ -423,10 +423,12 @@ object DomesticDirectExtractor {
                 // Only refresh after every persisted source fails (or for old
                 // tasks that predate directMediaAlternates). This still requires
                 // Douyin to return valid, identity-matched detail information.
-                val fresh = extractDouyin(original).getOrElse {
-                    lastError = it
+                val refreshResult = extractDouyin(original)
+                if (refreshResult.isFailure) {
+                    lastError = refreshResult.exceptionOrNull()
                     break
                 }
+                val fresh = refreshResult.getOrNull() ?: break
                 val asset = fresh.imageAssets.getOrNull(selectedImage)
                 if (asset == null || asset.index != selectedImage) {
                     lastError = IOException("图集序号或作品详情不匹配")
