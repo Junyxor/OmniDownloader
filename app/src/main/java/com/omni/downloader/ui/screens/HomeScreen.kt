@@ -525,7 +525,7 @@ private fun HomePlatformChips() {
             "小红书" to XiaohongshuRed,
             "TikTok" to TikTokCyan,
             "部分米游社" to BilibiliPink,
-            "通用 HTML5 网页" to MaterialTheme.colorScheme.primary
+            "通用 HTML5 网页" to TikTokCyan
         )
     }
     FlowRow(
