@@ -36,6 +36,39 @@ class MihoyoVideoExtractorTest {
         )?.appSn)
     }
 
+    @Test fun parsesMobileHashRouteAndCanonicalizesDownloadTasks() {
+        val mobile = MihoyoVideoExtractor.parseSource(
+            "https://m.miyoushe.com/ys/#/article/79015625"
+        )
+        assertEquals(MihoyoVideoExtractor.SourceType.POST, mobile?.type)
+        assertEquals("79015625", mobile?.id)
+        assertEquals("ys", mobile?.postGame)
+        assertEquals(
+            "https://www.miyoushe.com/ys/article/79015625",
+            MihoyoVideoExtractor.canonicalPostUrl(mobile!!)
+        )
+        assertEquals("米游社", UrlSniffer.identifySite("https://m.miyoushe.com/ys/#/article/79015625"))
+        val indexed = MihoyoVideoExtractor.parseSource(
+            "https://m.miyoushe.com/ys/#/article/79015625?omni_vod=2"
+        )
+        assertEquals(2, indexed?.videoIndex)
+        assertEquals(
+            "https://www.miyoushe.com/ys/article/79015625#omni_vod=2",
+            MihoyoVideoExtractor.canonicalPostUrl(indexed!!)
+        )
+        val standard = MihoyoVideoExtractor.parseSource(
+            "https://www.miyoushe.com/ys/article/79015625#omni_vod=2"
+        )
+        assertEquals("79015625", standard?.id)
+        assertEquals(2, standard?.videoIndex)
+        assertEquals(null, MihoyoVideoExtractor.parseSource(
+            "https://m.miyoushe.com.evil.example/ys/#/article/79015625"
+        ))
+        assertEquals(null, MihoyoVideoExtractor.parseSource(
+            "https://m.miyoushe.com/ys/#/other/79015625"
+        ))
+    }
+
     @Test fun extractsVideoAndSourceTagsButNotUntrustedHosts() {
         val html = """
             <div>
