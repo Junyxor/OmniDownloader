@@ -98,12 +98,13 @@ object LuxExtractor {
                     url = "$base#omni_lux_image=$i",
                     title = "$title · 图片 " + (i + 1),
                     siteName = "图文",
-                    thumbnailUrl = img.url
+                    thumbnailUrl = img.url,
+                    parserId = "lux"
                 )
             }
             return VideoMetadata(
                 url = base, title = title, siteName = "图文",
-                thumbnailUrl = images.first().url, multiMediaList = children
+                thumbnailUrl = images.first().url, multiMediaList = children, parserId = "lux"
             )
         }
         val formats = streams(info).map { stream ->
@@ -118,7 +119,7 @@ object LuxExtractor {
         if (formats.isEmpty()) throw IOException("没有找到可用的视频格式")
         return VideoMetadata(
             url = base, title = title, siteName = siteName(info.optString("site")),
-            availableVideoFormats = formats
+            availableVideoFormats = formats, parserId = "lux"
         )
     }
 
