@@ -287,8 +287,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             downloadType = type,
             selectedResolution = resolutionLabel,
             audioFormat = audioFormat,
-            directMediaUrl = currentMeta.imageAssets.firstOrNull()?.url
+            directMediaUrl = if (currentMeta.parserId == "youtube-native") {
+                if (type == DownloadType.AUDIO_ONLY)
+                    currentMeta.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
+                else format?.formatId.orEmpty()
+            } else currentMeta.imageAssets.firstOrNull()?.url
                 ?: DomesticMediaSource.url(currentMeta, format),
+            directAudioUrl = if (currentMeta.parserId == "youtube-native")
+                currentMeta.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
+                else "",
             directMediaHeaders = if (currentMeta.parserId == "douyin" && currentMeta.imageAssets.isNotEmpty())
                 mapOf("Referer" to "https://www.douyin.com/")
                 else DomesticMediaSource.headers(currentMeta.siteName),
@@ -442,8 +449,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 collectionTitle = if (isCollection) collectionTitle else null,
                 episodeIndex = if (isCollection) index + 1 else 0,
                 episodeTotal = if (isCollection) totalEpisodes else 0,
-                directMediaUrl = sub.imageAssets.firstOrNull()?.url
+                directMediaUrl = if (sub.parserId == "youtube-native") {
+                    if (finalType == DownloadType.AUDIO_ONLY)
+                        sub.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
+                    else sub.availableVideoFormats.firstOrNull {
+                        it.resolutionLabel == resolutionLabel
+                    }?.formatId ?: sub.availableVideoFormats.firstOrNull()?.formatId.orEmpty()
+                } else sub.imageAssets.firstOrNull()?.url
                     ?: DomesticMediaSource.url(sub, format),
+                directAudioUrl = if (sub.parserId == "youtube-native")
+                    sub.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
+                    else "",
                 directMediaHeaders = if (sub.parserId == "douyin" && sub.imageAssets.isNotEmpty())
                     mapOf("Referer" to "https://www.douyin.com/")
                     else DomesticMediaSource.headers(sub.siteName),

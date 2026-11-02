@@ -120,5 +120,8 @@ data class DownloadTask(
     // CDN mirrors for a single image resource. Kept across queue persistence so each
     // gallery item can be downloaded without signing/re-fetching the entire post.
     val directMediaAlternates: List<String> = emptyList(),
+    // Optional signed audio CDN URL selected alongside the YouTube DASH video.
+    // Stored locally; never logged or uploaded.
+    val directAudioUrl: String = "",
     val parserId: String = "" // persistent extractor identity for correct task resume
 )

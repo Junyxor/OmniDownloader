@@ -68,4 +68,19 @@ class DomesticMediaSourceTest {
         assertEquals("douyin", restored.parserId)
     }
 
+    @Test fun youtubeSignedMediaUrlsCanPersistWithoutAnotherPageRequest() {
+        val src = "https://r1.googlevideo.com/videoplayback?expire=123&itag=137"
+        val audio = "https://r2.googlevideo.com/videoplayback?expire=123&itag=140"
+        val task = DownloadTask(
+            id = "cached-yt", url = "https://www.youtube.com/watch?v=gjUzH4UcSkw",
+            title = "test", downloadType = DownloadType.VIDEO_WITH_AUDIO,
+            selectedResolution = "1080p DASH (itag 137)",
+            directMediaUrl = src, directAudioUrl = audio, parserId = "youtube-native"
+        )
+        val restored = Json.decodeFromString<DownloadTask>(Json.encodeToString(task))
+        assertEquals(src, restored.directMediaUrl)
+        assertEquals(audio, restored.directAudioUrl)
+        assertEquals("youtube-native", restored.parserId)
+    }
+
 }

@@ -351,29 +351,77 @@ object YouTubeNativeExtractor {
         val audioTask = task.id + "-yt-audio"
         NativeTransfer.reset(videoTask)
         NativeTransfer.reset(audioTask)
-        val metadata = extract(task.url, proxy).getOrElse {
-            return@withContext Result.failure(it)
+        // Persisted metadata URLs are tried first. Re-reading the entire
+        // YouTube watch page after a successful preview can trigger a second
+        // anti-bot challenge and leave the task showing 0% unnecessarily.
+        // Only refresh if preflight detects an expired/rejected CDN URL.
+        progress(0f, "校验 YouTube 媒体地址...", "", TaskStatus.DOWNLOADING)
+        var metadata: VideoMetadata? = null
+        var cached = task.directMediaUrl.startsWith("https://")
+        var selected: FormatOption? = if (cached) FormatOption(
+            formatId = task.directMediaUrl,
+            resolutionLabel = task.selectedResolution,
+            ext = if (task.downloadType == DownloadType.AUDIO_ONLY) "m4a" else "mp4",
+            isVideoOnly = task.selectedResolution.contains("DASH"),
+            isAudioOnly = task.downloadType == DownloadType.AUDIO_ONLY
+        ) else null
+        fun chooseFrom(fresh: VideoMetadata): FormatOption? {
+            val options = if (task.downloadType == DownloadType.AUDIO_ONLY)
+                fresh.availableAudioFormats else fresh.availableVideoFormats
+            return options.firstOrNull { it.resolutionLabel == task.selectedResolution }
+                ?: options.firstOrNull()
         }
-        val formats = if (task.downloadType == DownloadType.AUDIO_ONLY)
-            metadata.availableAudioFormats else metadata.availableVideoFormats
-        val selected = formats.firstOrNull { it.resolutionLabel == task.selectedResolution }
-            ?: formats.firstOrNull()
-            ?: return@withContext Result.failure(IOException(
-                if (task.downloadType == DownloadType.AUDIO_ONLY)
-                    "此视频没有直接可用的 M4A 音轨"
-                else "此视频没有可用的完整视频或可混流的 AVC/HEVC + AAC 轨道"
-            ))
+        if (selected == null) {
+            metadata = extract(task.url, proxy).getOrElse {
+                return@withContext Result.failure(it)
+            }
+            selected = chooseFrom(metadata!!)
+                ?: return@withContext Result.failure(
+                    IOException("YouTube 没有提供可下载的所选媒体流")
+                )
+        }
         val headers = mapOf(
             "Referer" to "https://www.youtube.com/",
             "User-Agent" to UA
         )
-        val checked = verifyMediaRange(selected.formatId, proxy)
+        var checked = verifyMediaRange(selected!!.formatId, proxy)
+        if (checked.isFailure && cached) {
+            // Cached CDN URLs have short lifetimes. Re-extract the *same*
+            // video and resolution once, then revalidate before aria2.
+            cached = false
+            metadata = extract(task.url, proxy).getOrElse {
+                return@withContext Result.failure(
+                    IOException("YouTube 旧直链已失效，重新解析也失败：" +
+                        it.message.orEmpty(), it)
+                )
+            }
+            selected = chooseFrom(metadata!!)
+                ?: return@withContext Result.failure(IOException("重新解析后所选视频流不可用"))
+            checked = verifyMediaRange(selected!!.formatId, proxy)
+        }
         if (checked.isFailure)
             return@withContext Result.failure(checked.exceptionOrNull()!!)
-        if (selected.isVideoOnly && task.downloadType == DownloadType.VIDEO_WITH_AUDIO) {
-            val audio = metadata.availableAudioFormats.firstOrNull()
-                ?: return@withContext Result.failure(IOException("高画质 DASH 缺失兼容 AAC 音轨"))
-            val checkedAudio = verifyMediaRange(audio.formatId, proxy)
+        if (selected!!.isVideoOnly && task.downloadType == DownloadType.VIDEO_WITH_AUDIO) {
+            var audioUrl = if (metadata == null) task.directAudioUrl else
+                metadata!!.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
+            if (audioUrl.isBlank()) {
+                metadata = extract(task.url, proxy).getOrElse {
+                    return@withContext Result.failure(it)
+                }
+                audioUrl = metadata!!.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
+            }
+            if (audioUrl.isBlank())
+                return@withContext Result.failure(IOException("高画质 DASH 缺少可用 AAC 音轨"))
+            var checkedAudio = verifyMediaRange(audioUrl, proxy)
+            if (checkedAudio.isFailure && metadata == null) {
+                metadata = extract(task.url, proxy).getOrElse {
+                    return@withContext Result.failure(it)
+                }
+                audioUrl = metadata!!.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
+                if (audioUrl.isBlank())
+                    return@withContext Result.failure(IOException("重新解析后 AAC 音轨不可用"))
+                checkedAudio = verifyMediaRange(audioUrl, proxy)
+            }
             if (checkedAudio.isFailure)
                 return@withContext Result.failure(checkedAudio.exceptionOrNull()!!)
             val videoFile = File(staging, "yt_" + task.id + "_video.m4v")
@@ -394,7 +442,7 @@ object YouTubeNativeExtractor {
                 return@withContext Result.failure(IOException("下载已取消"))
 
             val a = NativeTransfer.download(
-                context, audioTask, audio.formatId, audioFile, headers, proxy
+                context, audioTask, audioUrl, audioFile, headers, proxy
             ) { pct, speed, eta, status ->
                 progress((70f + pct * 0.23f).coerceIn(70f, 93f), speed, eta, status)
             }
@@ -440,7 +488,7 @@ object YouTubeNativeExtractor {
         if (cancelled.contains(task.id))
             return@withContext Result.failure(IOException("下载已取消"))
         DownloadEngine.downloadDirectMediaStream(
-            context, task, selected.formatId, proxy, staging, output, progress,
+            context, task, selected!!.formatId, proxy, staging, output, progress,
             headers
         )
     }
