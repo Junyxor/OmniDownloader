@@ -1,5 +1,8 @@
 package com.omni.downloader.ui.components
 
+import com.omni.downloader.ui.design.GlassButton
+import com.omni.downloader.ui.design.GlassTextButton
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,7 +60,7 @@ fun BilibiliGuideDialog(
             )
         },
         confirmButton = {
-            Button(
+            GlassButton(
                 onClick = onLoginClick,
 
             ) {
@@ -65,7 +68,7 @@ fun BilibiliGuideDialog(
             }
         },
         dismissButton = {
-            TextButton(
+            GlassTextButton(
                 onClick = onDismiss,
 
             ) {
