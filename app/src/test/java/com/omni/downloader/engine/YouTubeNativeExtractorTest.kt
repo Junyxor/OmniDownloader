@@ -66,4 +66,37 @@ class YouTubeNativeExtractorTest {
                       "streamingData":{"formats":[]}}"""
         assertTrue(YouTubeNativeExtractor.parsePlayer(live, id).isFailure)
     }
+    @Test fun adaptiveAvcDashWithM4aIsSelectableAndAv1IsNot() {
+        val json = """
+        {"videoDetails":{"videoId":"$id","title":"DASH"},
+         "streamingData":{"formats":[],
+         "adaptiveFormats":[
+           {"itag":137,"mimeType":"video/mp4; codecs=\"avc1.640028\"",
+            "url":"https://r1.googlevideo.com/video1080","height":1080,
+            "width":1920,"fps":30},
+           {"itag":399,"mimeType":"video/mp4; codecs=\"av01.0.09M.08\"",
+            "url":"https://r1.googlevideo.com/videoav1","height":2160},
+           {"itag":140,"mimeType":"audio/mp4; codecs=\"mp4a.40.2\"",
+            "url":"https://r1.googlevideo.com/audio","bitrate":128000}]}}
+        """.trimIndent()
+        val meta = YouTubeNativeExtractor.parsePlayer(json, id).getOrThrow()
+        assertEquals(1, meta.availableVideoFormats.size)
+        val stream = meta.availableVideoFormats.single()
+        assertTrue(stream.isVideoOnly)
+        assertEquals(1080, stream.height)
+        assertTrue(stream.resolutionLabel.contains("DASH"))
+        assertTrue(stream.resolutionLabel.contains("itag 137"))
+        assertTrue(stream.note.contains("aria2"))
+    }
+
+    @Test fun adaptiveVideoWithoutAudioIsNotAdvertisedAsCompleteStream() {
+        val json = """
+        {"videoDetails":{"videoId":"$id","title":"No audio"},
+         "streamingData":{"formats":[],
+         "adaptiveFormats":[{"itag":137,"mimeType":"video/mp4; codecs=\"avc1.640028\"",
+           "url":"https://r1.googlevideo.com/video1080","height":1080}]}}
+        """.trimIndent()
+        assertTrue(YouTubeNativeExtractor.parsePlayer(json, id).isFailure)
+    }
+
 }

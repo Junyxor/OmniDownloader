@@ -248,6 +248,7 @@ object DownloadEngine {
     fun cancelTask(taskId: String) {
         cancelled.add(taskId)
         NativeTransfer.cancel(taskId)
+        YouTubeNativeExtractor.cancel(taskId)
     }
 
     private fun safeTitle(value: String): String =

@@ -1,6 +1,7 @@
 package com.omni.downloader.engine
 
 import android.content.Context
+import android.media.MediaScannerConnection
 import android.webkit.CookieManager
 import com.omni.downloader.data.model.DownloadTask
 import com.omni.downloader.data.model.DownloadType
@@ -21,6 +22,7 @@ import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.URI
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Native JSON-only YouTube adapter: no Lux, yt-dlp, JS runtime, or binary extractor.
@@ -33,6 +35,14 @@ import java.util.concurrent.TimeUnit
 object YouTubeNativeExtractor {
     private const val UA = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+    private val cancelled = ConcurrentHashMap.newKeySet<String>()
+
+    fun cancel(taskId: String) {
+        cancelled.add(taskId)
+        NativeTransfer.cancel(taskId + "-yt-video")
+        NativeTransfer.cancel(taskId + "-yt-audio")
+    }
+
 
     internal fun videoId(url: String): String? {
         val uri = runCatching { URI(url) }.getOrNull() ?: return null
@@ -151,6 +161,34 @@ object YouTubeNativeExtractor {
                 note = "YouTube 官方返回的音频轨"
             )
         }
+        // Adaptive 1080p/4K streams can be remuxed with Android MediaMuxer
+        // when video is MP4 AVC/HEVC and a native M4A/AAC track is available.
+        // AV1/VP9 and container conversions are intentionally not advertised.
+        if (audios.isNotEmpty()) {
+            for (i in 0 until adaptive.length()) {
+                val row = adaptive.optJSONObject(i) ?: continue
+                val mime = row.optString("mimeType")
+                if (!mime.startsWith("video/mp4") ||
+                    !(mime.contains("avc1", ignoreCase = true) ||
+                      mime.contains("hvc1", ignoreCase = true) ||
+                      mime.contains("hev1", ignoreCase = true))) continue
+                if (row.optString("url").isBlank() &&
+                    (row.has("signatureCipher") || row.has("cipher"))) cipherCount++
+                val url = direct(row) ?: continue
+                val height = row.optInt("height")
+                val fps = row.optInt("fps")
+                val itag = row.optInt("itag")
+                val label = (if (height > 0) height.toString() + "p" else "视频轨") +
+                    (if (fps > 30) fps.toString() else "") +
+                    " DASH" + (if (itag > 0) " (itag " + itag + ")" else "")
+                videos += FormatOption(
+                    formatId = url, resolutionLabel = label,
+                    width = row.optInt("width"), height = height, fps = fps,
+                    ext = "mp4", isVideoOnly = true,
+                    note = "aria2 分轨下载 + Android 系统 MP4 无损合并"
+                )
+            }
+        }
         if (videos.isEmpty() && audios.isEmpty()) {
             throw IOException(if (cipherCount > 0)
                 "YouTube 流需要解签名；轻量原生实现暂未支持"
@@ -250,6 +288,11 @@ object YouTubeNativeExtractor {
         context: Context, task: DownloadTask, staging: File, output: File,
         progress: (Float, String, String, TaskStatus) -> Unit, proxy: String
     ): Result<String> = withContext(Dispatchers.IO) {
+        cancelled.remove(task.id)
+        val videoTask = task.id + "-yt-video"
+        val audioTask = task.id + "-yt-audio"
+        NativeTransfer.reset(videoTask)
+        NativeTransfer.reset(audioTask)
         val metadata = extract(task.url, proxy).getOrElse {
             return@withContext Result.failure(it)
         }
@@ -260,11 +303,81 @@ object YouTubeNativeExtractor {
             ?: return@withContext Result.failure(IOException(
                 if (task.downloadType == DownloadType.AUDIO_ONLY)
                     "此视频没有直接可用的 M4A 音轨"
-                else "此视频没有可用的音画合流直链；独立 DASH 混流暂未实现"
+                else "此视频没有可用的完整视频或可混流的 AVC/HEVC + AAC 轨道"
             ))
+        val headers = mapOf(
+            "Referer" to "https://www.youtube.com/",
+            "User-Agent" to UA
+        )
+        if (selected.isVideoOnly && task.downloadType == DownloadType.VIDEO_WITH_AUDIO) {
+            val audio = metadata.availableAudioFormats.firstOrNull()
+                ?: return@withContext Result.failure(IOException("高画质 DASH 缺失兼容 AAC 音轨"))
+            val videoFile = File(staging, "yt_" + task.id + "_video.m4v")
+            val audioFile = File(staging, "yt_" + task.id + "_audio.m4a")
+            val mergedFile = File(staging, "yt_" + task.id + "_merged.mp4")
+            if (cancelled.contains(task.id))
+                return@withContext Result.failure(IOException("下载已取消"))
+
+            val v = NativeTransfer.download(
+                context, videoTask, selected.formatId, videoFile, headers, proxy
+            ) { pct, speed, eta, status ->
+                progress((pct * 0.69f).coerceIn(1f, 69f), speed, eta, status)
+            }
+            if (v.isFailure) return@withContext Result.failure(v.exceptionOrNull()!!)
+            if (!DownloadEngine.isValidMediaFile(videoFile))
+                return@withContext Result.failure(IOException("DASH 视频轨不是有效媒体文件"))
+            if (cancelled.contains(task.id))
+                return@withContext Result.failure(IOException("下载已取消"))
+
+            val a = NativeTransfer.download(
+                context, audioTask, audio.formatId, audioFile, headers, proxy
+            ) { pct, speed, eta, status ->
+                progress((70f + pct * 0.23f).coerceIn(70f, 93f), speed, eta, status)
+            }
+            if (a.isFailure) return@withContext Result.failure(a.exceptionOrNull()!!)
+            if (!DownloadEngine.isValidMediaFile(audioFile))
+                return@withContext Result.failure(IOException("DASH AAC 音轨不是有效媒体文件"))
+            if (cancelled.contains(task.id))
+                return@withContext Result.failure(IOException("下载已取消"))
+            progress(95f, "", "使用 Android MediaMuxer 合并音视频...", TaskStatus.PROCESSING)
+            val merged = FFmpegExecutor.mergeVideoAndAudio(
+                context, videoFile, audioFile, mergedFile
+            )
+            if (merged.isFailure) return@withContext Result.failure(
+                IOException("系统原生 MP4 混流失败：" +
+                    merged.exceptionOrNull()?.message.orEmpty(), merged.exceptionOrNull())
+            )
+            if (!DownloadEngine.isValidMediaFile(mergedFile) || cancelled.contains(task.id)) {
+                mergedFile.delete()
+                return@withContext Result.failure(IOException("合并后文件无效或任务已取消"))
+            }
+            val base = task.title.replace(Regex("""[\\/:*?"<>|]"""), "_")
+                .trim().ifBlank { "YouTube" }.take(64)
+            var destination = File(output, base + ".mp4")
+            var seq = 1
+            while (destination.exists()) {
+                destination = File(output, base + "_" + seq++ + ".mp4")
+            }
+            try {
+                mergedFile.copyTo(destination, overwrite = false)
+                MediaScannerConnection.scanFile(
+                    context, arrayOf(destination.absolutePath), arrayOf("video/mp4"), null
+                )
+                videoFile.delete()
+                audioFile.delete()
+                mergedFile.delete()
+                progress(100f, "", "", TaskStatus.COMPLETED)
+                return@withContext Result.success(destination.absolutePath)
+            } catch (e: Exception) {
+                destination.delete()
+                return@withContext Result.failure(e)
+            }
+        }
+        if (cancelled.contains(task.id))
+            return@withContext Result.failure(IOException("下载已取消"))
         DownloadEngine.downloadDirectMediaStream(
             context, task, selected.formatId, proxy, staging, output, progress,
-            mapOf("Referer" to "https://www.youtube.com/", "User-Agent" to UA)
+            headers
         )
     }
 }
