@@ -86,11 +86,12 @@ object Aria2Downloader {
 
             onProgress(1f, "", "aria2 八连接分段下载...", TaskStatus.DOWNLOADING)
             val cmd = ProcessBuilder(args).redirectErrorStream(true)
-            process = cmd.start()
-            if (cancelled.contains(taskId)) process.destroyForcibly()
-            val previous = processes.putIfAbsent(taskId, process)
+            val spawned = cmd.start()
+            process = spawned
+            if (cancelled.contains(taskId)) spawned.destroyForcibly()
+            val previous = processes.putIfAbsent(taskId, spawned)
             if (previous != null) {
-                process.destroyForcibly()
+                spawned.destroyForcibly()
                 throw IOException("此下载任务已在执行")
             }
             val log = StringBuilder(512)
@@ -98,7 +99,7 @@ object Aria2Downloader {
             var lastUpdate = 0L
             val reader = Thread({
                 try {
-                    process!!.inputStream.bufferedReader().use { input ->
+                    spawned.inputStream.bufferedReader().use { input ->
                         val line = StringBuilder(512)
                         while (true) {
                             val ch = input.read()
@@ -130,7 +131,7 @@ object Aria2Downloader {
             }, "aria2-output-$taskId")
             reader.isDaemon = true
             reader.start()
-            val exitCode = process.waitFor()
+            val exitCode = spawned.waitFor()
             reader.join(1500)
             if (cancelled.contains(taskId)) throw IOException("任务已取消")
             if (exitCode != 0 || !destination.isFile || destination.length() == 0L) {
