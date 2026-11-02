@@ -123,13 +123,17 @@ internal object HttpFallbackDownloader {
                             val start = match.groupValues[1].toLong()
                             if (start != offset) throw IOException("Range 起点不一致，拒绝拼接")
                             total = match.groupValues[3].takeUnless { it == "*" }?.toLongOrNull() ?: -1L
-                            if (state?.size ?: -1L > 0 && total > 0 && state!!.size != total) {
+                            if ((state?.size ?: -1L) > 0L && total > 0L && state!!.size != total) {
                                 throw IOException("源文件长度变化，拒绝拼接")
                             }
                         }
                         val validator = response.header("ETag").orEmpty()
                             .takeUnless { it.startsWith("W/") || it.isBlank() }
                             ?: response.header("Last-Modified").orEmpty()
+                        if (offset > 0L && validator.isNotBlank() && state?.validator != validator) {
+                            // Even when an origin responds with 206, never concatenate changed data.
+                            throw IOException("服务器版本标识已更改，拒绝错误续传")
+                        }
                         if (offset == 0L) {
                             if (validator.isNotBlank()) save(stateFile, Resume(key, validator, total))
                             else stateFile.delete()
