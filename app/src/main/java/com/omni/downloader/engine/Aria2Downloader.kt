@@ -41,6 +41,26 @@ object Aria2Downloader {
         .replace(Regex("""https?://[^\s)]+"""), "[media URL]")
         .replace(Regex("""(?i)(?:auth_key|token|cookie|authorization)=[^\s&]+"""), "[redacted]")
 
+    /** Produce a useful and privacy-safe failure reason for the UI. */
+    internal fun explainFailure(exitCode: Int, output: String): String {
+        val log = output.lowercase(java.util.Locale.ROOT)
+        return when {
+            "403" in log || "forbidden" in log ->
+                "CDN HTTP 403：资源被拒绝。YouTube 通常需要重新获取播放参数、PO Token，或当前出口未获授权"
+            "429" in log || "too many requests" in log ->
+                "CDN HTTP 429：请求过于频繁，暂停重试后再试"
+            "401" in log || "unauthorized" in log ->
+                "CDN HTTP 401：需要授权或登录信息"
+            "404" in log || "not found" in log ->
+                "CDN HTTP 404：媒体资源已失效，请重新解析"
+            "ssl" in log || "certificate" in log ->
+                "TLS 证书校验失败，请检查设备时间、代理与证书信任"
+            "connection refused" in log || "failed to connect" in log ->
+                "无法连接媒体 CDN，请检查代理、VPN 或网络"
+            else -> "aria2 下载失败 (exit=$exitCode)：${sanitized(output.takeLast(900))}"
+        }
+    }
+
     fun cancel(taskId: String) {
         cancelled.add(taskId)
         // SIGTERM allows aria2 to persist its .aria2 control file for safe resume.
@@ -79,13 +99,20 @@ object Aria2Downloader {
                 File(destination.absolutePath + ".aria2").delete()
                 sourceKey.writeText(key)
             }
+            val googleVideo = runCatching {
+                val host = java.net.URI(url).host.orEmpty().lowercase(java.util.Locale.ROOT)
+                host == "googlevideo.com" || host.endsWith(".googlevideo.com")
+            }.getOrDefault(false)
+            // GoogleVideo signed URLs can be sensitive to bursty range requests.
+            // One connection cannot resolve PO-token, expired URL or IP-based 403.
+            val segmentCount = if (googleVideo) 1 else 8
             val args = mutableListOf(
                 binary.absolutePath, "--no-conf=true", "--enable-color=false",
                 "--console-log-level=notice", "--summary-interval=1",
                 "--show-console-readout=true", "--file-allocation=none",
                 "--continue=true", "--auto-file-renaming=false", "--allow-overwrite=true",
-                "--max-concurrent-downloads=1", "--max-connection-per-server=8",
-                "--split=8", "--min-split-size=1M", "--max-tries=5",
+                "--max-concurrent-downloads=1", "--max-connection-per-server=$segmentCount",
+                "--split=$segmentCount", "--min-split-size=1M", "--max-tries=5",
                 "--retry-wait=2", "--connect-timeout=20", "--timeout=60",
                 "--check-certificate=true",
                 "--ca-certificate=${AndroidCaBundle.get(context).absolutePath}",
@@ -156,7 +183,7 @@ object Aria2Downloader {
             reader.join(1500)
             if (cancelled.contains(taskId)) throw IOException("任务已取消")
             if (exitCode != 0 || !destination.isFile || destination.length() == 0L) {
-                throw IOException("aria2 下载失败 (exit=$exitCode): ${sanitized(log.toString().takeLast(1500))}")
+                throw IOException(explainFailure(exitCode, log.toString()))
             }
             // Sidecars are needed for interrupted transfers, not successful ones.
             File(destination.absolutePath + ".aria2").delete()

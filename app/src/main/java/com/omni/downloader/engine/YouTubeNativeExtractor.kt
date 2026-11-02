@@ -1,0 +1,710 @@
+package com.omni.downloader.engine
+
+import android.content.Context
+import android.media.MediaScannerConnection
+import android.webkit.CookieManager
+import com.omni.downloader.data.model.DownloadTask
+import com.omni.downloader.data.model.DownloadType
+import com.omni.downloader.data.model.FormatOption
+import com.omni.downloader.data.model.TaskStatus
+import com.omni.downloader.data.model.VideoMetadata
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.io.IOException
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.URI
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * Native JSON-only YouTube adapter: no Lux, yt-dlp, JS runtime, or binary extractor.
+ * Downloads are delegated exclusively to aria2 via DownloadEngine.
+ *
+ * Restricted to complete progressive video and direct M4A audio links.
+ * SignatureCipher, n challenges, PO tokens and protected/adaptive-only media
+ * are reported as unsupported, never falsely labelled as downloadable.
+ */
+object YouTubeNativeExtractor {
+    private const val UA = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+    private val cancelled = ConcurrentHashMap.newKeySet<String>()
+
+    fun cancel(taskId: String) {
+        cancelled.add(taskId)
+        NativeTransfer.cancel(taskId + "-yt-video")
+        NativeTransfer.cancel(taskId + "-yt-audio")
+    }
+
+
+    /** Only exact YouTube hosts are trusted; a query or subdomain suffix is not enough. */
+    internal fun isYouTubeHost(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        if (uri.scheme !in setOf("https", "http") || uri.userInfo != null) return false
+        val host = uri.host?.lowercase()?.removePrefix("www.") ?: return false
+        return host in setOf(
+            "youtube.com", "m.youtube.com", "music.youtube.com",
+            "youtube-nocookie.com", "youtu.be"
+        )
+    }
+
+    /** Discard share/tracking params, preserving only the requested video ID. */
+    internal fun canonicalWatchUrl(url: String): String? =
+        videoId(url)?.let { "https://www.youtube.com/watch?v=$it" }
+
+    internal fun videoId(url: String): String? {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return null
+        if (!isYouTubeHost(url)) return null
+        val host = uri.host?.lowercase()?.removePrefix("www.") ?: return null
+        val path = uri.path.orEmpty().trim('/')
+        val id = when {
+            host == "youtu.be" -> path.substringBefore('/')
+            host in setOf("youtube.com", "m.youtube.com",
+                "music.youtube.com", "youtube-nocookie.com") -> when {
+                path == "watch" -> uri.rawQuery.orEmpty().split("&")
+                    .firstOrNull { it.startsWith("v=") }?.substringAfter("=")
+                path.startsWith("shorts/") || path.startsWith("live/") ||
+                    path.startsWith("embed/") -> path.substringAfter('/').substringBefore('/')
+                else -> null
+            }
+            else -> null
+        }
+        return id?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{11}")) }
+    }
+
+    internal fun jsonAfter(text: String, marker: String): String? {
+        val at = text.indexOf(marker)
+        if (at < 0) return null
+        val start = text.indexOf('{', at + marker.length)
+        if (start < 0) return null
+        var depth = 0
+        var quoted = false
+        var escaped = false
+        for (i in start until text.length) {
+            val ch = text[i]
+            if (quoted) {
+                when {
+                    escaped -> escaped = false
+                    ch == '\\' -> escaped = true
+                    ch == '"' -> quoted = false
+                }
+            } else {
+                when (ch) {
+                    '"' -> quoted = true
+                    '{' -> depth++
+                    '}' -> {
+                        depth--
+                        if (depth == 0) return text.substring(start, i + 1)
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    internal fun parsePlayer(json: String, id: String): Result<VideoMetadata> = runCatching {
+        val root = JSONObject(json)
+        val status = root.optJSONObject("playabilityStatus")
+        val state = status?.optString("status").orEmpty()
+        if (state.isNotBlank() && state != "OK") {
+            throw IOException("YouTube 播放受限：" +
+                status?.optString("reason").orEmpty().ifBlank { state })
+        }
+        val details = root.optJSONObject("videoDetails")
+            ?: throw IOException("YouTube 未返回作品信息")
+        if (details.optString("videoId") != id) {
+            throw IOException("YouTube 作品 ID 不匹配")
+        }
+        if (details.optBoolean("isLiveContent", false)) {
+            throw IOException("暂不支持直播和 HLS")
+        }
+        val streams = root.optJSONObject("streamingData")
+            ?: throw IOException("YouTube 没有公开播放流：可能需要签名或 PO Token")
+        val progressive = streams.optJSONArray("formats") ?: JSONArray()
+        val adaptive = streams.optJSONArray("adaptiveFormats") ?: JSONArray()
+        val videos = mutableListOf<FormatOption>()
+        val audios = mutableListOf<FormatOption>()
+        var cipherCount = 0
+
+        fun direct(entry: JSONObject): String? {
+            val url = entry.optString("url")
+            if (url.isBlank()) {
+                if (entry.has("signatureCipher") || entry.has("cipher")) cipherCount++
+                return null
+            }
+            val uri = runCatching { URI(url) }.getOrNull() ?: return null
+            if (uri.scheme != "https" || uri.userInfo != null || uri.host.isNullOrBlank()) return null
+            return url
+        }
+        for (i in 0 until progressive.length()) {
+            val row = progressive.optJSONObject(i) ?: continue
+            val mime = row.optString("mimeType")
+            if (!mime.startsWith("video/mp4") && !mime.startsWith("video/webm")) continue
+            if (row.optString("url").isBlank() &&
+                (row.has("signatureCipher") || row.has("cipher"))) cipherCount++
+            if (row.optString("audioQuality").isBlank() &&
+                row.optInt("audioChannels", 0) == 0) continue
+            val streamUrl = direct(row) ?: continue
+            val height = row.optInt("height")
+            videos += FormatOption(
+                formatId = streamUrl,
+                resolutionLabel = row.optString("qualityLabel")
+                    .ifBlank { if (height > 0) height.toString() + "p" else "完整视频" },
+                width = row.optInt("width"), height = height,
+                ext = if (mime.startsWith("video/webm")) "webm" else "mp4",
+                note = "YouTube 官方返回的完整音视频流"
+            )
+        }
+        for (i in 0 until adaptive.length()) {
+            val row = adaptive.optJSONObject(i) ?: continue
+            if (!row.optString("mimeType").startsWith("audio/mp4")) continue
+            if (row.optString("url").isBlank() &&
+                (row.has("signatureCipher") || row.has("cipher"))) cipherCount++
+            val streamUrl = direct(row) ?: continue
+            val kbps = row.optInt("bitrate") / 1000
+            audios += FormatOption(
+                formatId = streamUrl,
+                resolutionLabel = if (kbps > 0) kbps.toString() + "kbps M4A" else "M4A 音频",
+                ext = "m4a", isAudioOnly = true,
+                note = "YouTube 官方返回的音频轨"
+            )
+        }
+        // Adaptive 1080p/4K streams can be remuxed with Android MediaMuxer
+        // when video is MP4 AVC/HEVC and a native M4A/AAC track is available.
+        // AV1/VP9 and container conversions are intentionally not advertised.
+        if (audios.isNotEmpty()) {
+            for (i in 0 until adaptive.length()) {
+                val row = adaptive.optJSONObject(i) ?: continue
+                val mime = row.optString("mimeType")
+                if (!mime.startsWith("video/mp4") ||
+                    !(mime.contains("avc1", ignoreCase = true) ||
+                      mime.contains("hvc1", ignoreCase = true) ||
+                      mime.contains("hev1", ignoreCase = true))) continue
+                if (row.optString("url").isBlank() &&
+                    (row.has("signatureCipher") || row.has("cipher"))) cipherCount++
+                val url = direct(row) ?: continue
+                val height = row.optInt("height")
+                val fps = row.optInt("fps")
+                val itag = row.optInt("itag")
+                val label = (if (height > 0) height.toString() + "p" else "视频轨") +
+                    (if (fps > 30) fps.toString() else "") +
+                    " DASH" + (if (itag > 0) " (itag " + itag + ")" else "")
+                videos += FormatOption(
+                    formatId = url, resolutionLabel = label,
+                    width = row.optInt("width"), height = height, fps = fps,
+                    ext = "mp4", isVideoOnly = true,
+                    note = "aria2 分轨下载 + Android 系统 MP4 无损合并"
+                )
+            }
+        }
+        if (videos.isEmpty() && audios.isEmpty()) {
+            throw IOException(if (cipherCount > 0)
+                "YouTube 流需要解签名；轻量原生实现暂未支持"
+            else "YouTube 未提供直接流；可能需要 n 参数、PO Token 或登录")
+        }
+        val thumbs = details.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+        val thumb = thumbs?.optJSONObject((thumbs.length() - 1).coerceAtLeast(0))
+            ?.optString("url").orEmpty()
+        val duration = details.optString("lengthSeconds").toLongOrNull()
+            ?.let { (it / 60).toString() + ":" + (it % 60).toString().padStart(2, '0') }.orEmpty()
+        VideoMetadata(
+            url = "https://www.youtube.com/watch?v=$id",
+            title = details.optString("title").ifBlank { "YouTube $id" },
+            author = details.optString("author"),
+            durationText = duration, thumbnailUrl = thumb,
+            siteName = "YouTube",
+            availableVideoFormats = videos.distinctBy { it.formatId }
+                .sortedByDescending { it.height },
+            availableAudioFormats = audios.distinctBy { it.formatId }
+                .sortedByDescending { it.resolutionLabel.substringBefore("kbps").toIntOrNull() ?: 0 },
+            parserId = "youtube-native"
+        )
+    }
+
+    private fun client(proxy: String): OkHttpClient {
+        val b = OkHttpClient.Builder().followRedirects(true)
+            .connectTimeout(15, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS)
+        if (proxy.isNotBlank()) {
+            val uri = URI(if ("://" in proxy) proxy else "http://$proxy")
+            val host = uri.host ?: throw IOException("代理地址不合法")
+            val port = uri.port.takeIf { it in 1..65535 } ?: throw IOException("代理端口不合法")
+            val type = if (uri.scheme in setOf("socks5", "socks")) Proxy.Type.SOCKS else Proxy.Type.HTTP
+            b.proxy(Proxy(type, InetSocketAddress(host, port)))
+        }
+        return b.build()
+    }
+
+
+    /** YouTube can emit multiple page configuration fragments. */
+    internal fun playerConfigFromHtml(html: String): JSONObject {
+        val merged = JSONObject()
+        var offset = 0
+        var blocks = 0
+        while (blocks++ < 32) {
+            val at = html.indexOf("ytcfg.set(", offset)
+            if (at < 0) break
+            offset = at + "ytcfg.set(".length
+            val chunk = jsonAfter(html.substring(at), "ytcfg.set(") ?: continue
+            val obj = runCatching { JSONObject(chunk) }.getOrNull() ?: continue
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                merged.put(key, obj.get(key))
+            }
+        }
+        return merged
+    }
+
+    private data class PlayerClient(
+        val name: String,
+        val number: Int,
+        val version: String,
+        val userAgent: String = UA,
+        val cookies: Boolean = true,
+        val embedded: Boolean = false
+    )
+
+    private fun requestPlayer(
+        http: OkHttpClient,
+        config: JSONObject,
+        key: String,
+        id: String,
+        canonical: String,
+        spec: PlayerClient,
+        cookieString: String
+    ): String {
+        // Start with the actual page context. Do not force a US location.
+        val original = config.optJSONObject("INNERTUBE_CONTEXT")
+        val context = if (original == null) JSONObject()
+            else JSONObject(original.toString())
+        val clientInfo = context.optJSONObject("client") ?: JSONObject()
+        clientInfo.put("clientName", spec.name)
+        clientInfo.put("clientVersion", spec.version)
+        if (spec.userAgent != UA) clientInfo.put("userAgent", spec.userAgent)
+        config.optString("VISITOR_DATA").takeIf { it.isNotBlank() }?.let {
+            clientInfo.put("visitorData", it)
+        }
+        if (spec.name == "IOS") {
+            clientInfo.put("osName", "iPhone")
+            clientInfo.put("osVersion", "18.3.2.22D82")
+            clientInfo.put("deviceMake", "Apple")
+            clientInfo.put("deviceModel", "iPhone16,2")
+            clientInfo.remove("androidSdkVersion")
+            clientInfo.remove("browserName")
+            clientInfo.remove("browserVersion")
+        }
+        if (spec.name == "TVHTML5") {
+            clientInfo.remove("osName")
+            clientInfo.remove("osVersion")
+            clientInfo.remove("deviceMake")
+            clientInfo.remove("deviceModel")
+            clientInfo.remove("androidSdkVersion")
+            clientInfo.remove("browserName")
+            clientInfo.remove("browserVersion")
+        }
+        context.put("client", clientInfo)
+        if (spec.embedded) {
+            context.put("thirdParty", JSONObject()
+                .put("embedUrl", "https://www.youtube.com/embed/$id"))
+        } else {
+            context.remove("thirdParty")
+        }
+        val payload = JSONObject()
+            .put("videoId", id)
+            .put("context", context)
+            .put("contentCheckOk", true)
+            .put("racyCheckOk", true)
+        val sts = config.optInt("STS")
+        if (sts > 0) {
+            payload.put("playbackContext", JSONObject()
+                .put("contentPlaybackContext", JSONObject()
+                    .put("signatureTimestamp", sts)))
+        }
+        val request = Request.Builder()
+            .url("https://www.youtube.com/youtubei/v1/player?key=$key")
+            .header("User-Agent", spec.userAgent)
+            .header("Origin", "https://www.youtube.com")
+            .header("Referer", if (spec.embedded)
+                "https://www.youtube.com/embed/$id" else canonical)
+            .header("X-Youtube-Client-Name", spec.number.toString())
+            .header("X-Youtube-Client-Version", spec.version)
+            .apply {
+                if (spec.cookies && cookieString.isNotBlank())
+                    header("Cookie", cookieString)
+            }
+            .post(payload.toString().toRequestBody(
+                "application/json; charset=utf-8".toMediaType()))
+            .build()
+        return http.newCall(request).execute().use { response ->
+            if (!response.isSuccessful)
+                throw IOException("播放器接口 HTTP ${response.code}")
+            val responseBody = response.body ?: throw IOException("播放器接口响应为空")
+            if (responseBody.contentLength() > 2L * 1024 * 1024)
+                throw IOException("播放器接口返回过大")
+            responseBody.charStream().use { it.readText().take(2 * 1024 * 1024) }
+        }
+    }
+
+    /**
+     * Validate CDN byte availability before exposing a format as downloadable.
+     * A metadata-only "OK" status does not establish that transfer works.
+     */
+    private fun filterVerifiedFormats(
+        meta: VideoMetadata,
+        proxy: String,
+        headers: Map<String, String>
+    ): Result<VideoMetadata> = runCatching {
+        val audio = mutableListOf<FormatOption>()
+        for (option in meta.availableAudioFormats.take(2)) {
+            if (verifyMediaRange(option.formatId, proxy, headers).isSuccess) {
+                audio += option
+                break
+            }
+        }
+        val video = mutableListOf<FormatOption>()
+        // Prioritize already-muxed progressive video for reliable downloads,
+        // then probe a limited number of high-resolution DASH candidates.
+        // A valid audio track alone is NOT a successful video extraction.
+        val candidates = meta.availableVideoFormats.sortedWith(
+            compareBy<FormatOption> { it.isVideoOnly }
+                .thenByDescending { it.height }
+        ).take(6)
+        for (option in candidates) {
+            if (option.isVideoOnly && audio.isEmpty()) continue
+            if (verifyMediaRange(option.formatId, proxy, headers).isSuccess) {
+                video += option
+                if (video.size >= 2) break
+            }
+        }
+        if (video.isEmpty()) {
+            throw IOException("播放器只返回音频或不可访问的视频流，不能当成可下载视频")
+        }
+        meta.copy(
+            availableVideoFormats = video.sortedByDescending { it.height },
+            availableAudioFormats = audio,
+            mediaHeaders = headers
+        )
+    }
+
+    suspend fun extract(url: String, proxy: String = ""): Result<VideoMetadata> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val canonical = canonicalWatchUrl(url)
+                    ?: throw IOException("不是有效的 YouTube 视频链接")
+                val id = videoId(canonical)
+                    ?: throw IOException("YouTube 视频 ID 不合法")
+                val http = client(proxy)
+                val cookies = runCatching {
+                    CookieManager.getInstance().getCookie("https://www.youtube.com/")
+                }.getOrNull().orEmpty()
+                val request = Request.Builder().url(canonical)
+                    .header("User-Agent", UA)
+                    .header("Accept-Language", "en-US,en;q=0.9")
+                    .apply {
+                        if (cookies.isNotBlank()) header("Cookie", cookies)
+                    }
+                    .build()
+                val html = http.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful)
+                        throw IOException("YouTube 网页 HTTP ${response.code}")
+                    val responseBody = response.body
+                        ?: throw IOException("YouTube 网页响应为空")
+                    if (responseBody.contentLength() > 3L * 1024 * 1024)
+                        throw IOException("YouTube 网页超出 3 MB 限制")
+                    responseBody.charStream().use { it.readText().take(3 * 1024 * 1024) }
+                }
+                val errors = mutableListOf<String>()
+                fun tryResponse(
+                    clientLabel: String,
+                    json: String,
+                    headers: Map<String, String>
+                ): VideoMetadata? {
+                    val parsed = parsePlayer(json, id)
+                    if (parsed.isFailure) {
+                        errors += "$clientLabel: " +
+                            parsed.exceptionOrNull()?.message.orEmpty()
+                        return null
+                    }
+                    val filtered = filterVerifiedFormats(parsed.getOrThrow(), proxy, headers)
+                    if (filtered.isSuccess) return filtered.getOrThrow()
+                    errors += "$clientLabel: " +
+                        filtered.exceptionOrNull()?.message.orEmpty()
+                    return null
+                }
+
+                val initial = jsonAfter(html, "ytInitialPlayerResponse")
+                if (initial != null)
+                    tryResponse(
+                        "网页初始播放器", initial,
+                        mapOf("User-Agent" to UA, "Referer" to canonical)
+                    )?.let { return@runCatching it }
+
+                val config = playerConfigFromHtml(html)
+                val apiKey = config.optString("INNERTUBE_API_KEY")
+                val contextClient = config.optJSONObject("INNERTUBE_CONTEXT")
+                    ?.optJSONObject("client")
+                val webVersion = config.optString("INNERTUBE_CLIENT_VERSION")
+                    .ifBlank { contextClient?.optString("clientVersion").orEmpty() }
+                if (apiKey.isBlank() || webVersion.isBlank()) {
+                    throw IOException("YouTube 页面缺少播放器配置；" +
+                        errors.joinToString("；").take(250))
+                }
+                // A non-playable WEB response does not prove the video is gone.
+                // Try the embedded context and a mobile first-party client.
+                // These may still require PO tokens; accepted streams must
+                // pass an actual CDN probe, not just a JSON metadata check.
+                val clients = listOf(
+                    PlayerClient("WEB", 1, webVersion),
+                    PlayerClient(
+                        "WEB_EMBEDDED_PLAYER", 56, webVersion,
+                        userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+                            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 " +
+                            "Safari/605.1.15,gzip(gfe)",
+                        embedded = true
+                    ),
+                    PlayerClient(
+                        "TVHTML5", 7, "7.20260707.07.00",
+                        userAgent = "Mozilla/5.0 (ChromiumStylePlatform) " +
+                            "Cobalt/25.lts.30.1034943-gold (unlike Gecko), " +
+                            "Unknown_TV_Unknown_0/Unknown"
+                    ),
+                    PlayerClient(
+                        "IOS", 5, "21.26.4",
+                        userAgent = "com.google.ios.youtube/21.26.4 " +
+                            "(iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+                        cookies = false
+                    )
+                )
+                for (spec in clients) {
+                    val result = runCatching {
+                        requestPlayer(http, config, apiKey, id, canonical, spec, cookies)
+                    }
+                    if (result.isFailure) {
+                        errors += "${spec.name}: " +
+                            result.exceptionOrNull()?.message.orEmpty()
+                        continue
+                    }
+                    val mediaHeaders = mapOf(
+                        "User-Agent" to spec.userAgent,
+                        "Referer" to if (spec.embedded)
+                            "https://www.youtube.com/embed/$id" else canonical
+                    )
+                    tryResponse(spec.name, result.getOrThrow(), mediaHeaders)
+                        ?.let { return@runCatching it }
+                }
+                throw IOException(
+                    "YouTube 网页及备用客户端都未取得可验证的媒体流。" +
+                        errors.takeLast(4).joinToString("；").take(420) +
+                        "；可能涉及地区/登录、PO Token 或签名限制"
+                )
+            }
+        }
+
+    /**
+     * Check the exact signed CDN stream with a small range GET.
+     * Parsing titles and qualities must never be confused with downloading bytes.
+     */
+    private fun verifyMediaRange(
+        url: String, proxy: String,
+        headers: Map<String, String> = emptyMap()
+    ): Result<Unit> = runCatching {
+        val uri = URI(url)
+        if (uri.scheme != "https" || uri.host.isNullOrBlank())
+            throw IOException("YouTube 媒体流地址无效")
+        val req = Request.Builder().url(url)
+            .header("User-Agent", headers["User-Agent"] ?: UA)
+            .header("Referer", headers["Referer"] ?: "https://www.youtube.com/")
+            .header("Range", "bytes=0-1023")
+            .header("Accept-Encoding", "identity")
+            .build()
+        val probeClient = client(proxy).newBuilder()
+            .callTimeout(10, TimeUnit.SECONDS).build()
+        probeClient.newCall(req).execute().use { response ->
+            when (response.code) {
+                200, 206 -> {
+                    val contentType = response.header("Content-Type").orEmpty().lowercase()
+                    if (contentType.contains("text/html") ||
+                        contentType.contains("application/json") ||
+                        contentType.contains("text/plain")) {
+                        throw IOException("YouTube CDN 返回错误页面而非媒体数据")
+                    }
+                    val body = response.body ?: throw IOException("YouTube CDN 没有返回媒体数据")
+                    if (body.byteStream().read() < 0)
+                        throw IOException("YouTube CDN 返回了空媒体数据")
+                }
+                403 -> throw IOException(
+                    "YouTube CDN HTTP 403：可能需要 PO Token、JS 签名、授权或者当前网络出口受到限制"
+                )
+                404, 410 -> throw IOException(
+                    "YouTube CDN HTTP " + response.code + "：已解析直链过期，请重新解析"
+                )
+                429 -> throw IOException(
+                    "YouTube CDN HTTP 429：访问频率受限，请勿连续重试"
+                )
+                else -> throw IOException(
+                    "YouTube CDN HTTP " + response.code + "：当前媒体流不可下载"
+                )
+            }
+        }
+    }
+
+    suspend fun download(
+        context: Context, task: DownloadTask, staging: File, output: File,
+        progress: (Float, String, String, TaskStatus) -> Unit, proxy: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        cancelled.remove(task.id)
+        val videoTask = task.id + "-yt-video"
+        val audioTask = task.id + "-yt-audio"
+        NativeTransfer.reset(videoTask)
+        NativeTransfer.reset(audioTask)
+        // Persisted metadata URLs are tried first. Re-reading the entire
+        // YouTube watch page after a successful preview can trigger a second
+        // anti-bot challenge and leave the task showing 0% unnecessarily.
+        // Only refresh if preflight detects an expired/rejected CDN URL.
+        progress(0f, "校验 YouTube 媒体地址...", "", TaskStatus.DOWNLOADING)
+        var metadata: VideoMetadata? = null
+        var cached = task.directMediaUrl.startsWith("https://")
+        var selected: FormatOption? = if (cached) FormatOption(
+            formatId = task.directMediaUrl,
+            resolutionLabel = task.selectedResolution,
+            ext = if (task.downloadType == DownloadType.AUDIO_ONLY) "m4a" else "mp4",
+            isVideoOnly = task.selectedResolution.contains("DASH"),
+            isAudioOnly = task.downloadType == DownloadType.AUDIO_ONLY
+        ) else null
+        fun chooseFrom(fresh: VideoMetadata): FormatOption? {
+            val options = if (task.downloadType == DownloadType.AUDIO_ONLY)
+                fresh.availableAudioFormats else fresh.availableVideoFormats
+            return options.firstOrNull { it.resolutionLabel == task.selectedResolution }
+                ?: options.firstOrNull()
+        }
+        if (selected == null) {
+            metadata = extract(task.url, proxy).getOrElse {
+                return@withContext Result.failure(it)
+            }
+            selected = chooseFrom(metadata!!)
+                ?: return@withContext Result.failure(
+                    IOException("YouTube 没有提供可下载的所选媒体流")
+                )
+        }
+        var headers = (metadata?.mediaHeaders ?: task.directMediaHeaders)
+            .ifEmpty { mapOf("Referer" to "https://www.youtube.com/", "User-Agent" to UA) }
+        var checked = verifyMediaRange(selected!!.formatId, proxy, headers)
+        if (checked.isFailure && cached) {
+            // Cached CDN URLs have short lifetimes. Re-extract the *same*
+            // video and resolution once, then revalidate before aria2.
+            cached = false
+            metadata = extract(task.url, proxy).getOrElse {
+                return@withContext Result.failure(
+                    IOException("YouTube 旧直链已失效，重新解析也失败：" +
+                        it.message.orEmpty(), it)
+                )
+            }
+            selected = chooseFrom(metadata!!)
+                ?: return@withContext Result.failure(IOException("重新解析后所选视频流不可用"))
+            headers = metadata!!.mediaHeaders.ifEmpty { headers }
+            checked = verifyMediaRange(selected!!.formatId, proxy, headers)
+        }
+        if (checked.isFailure)
+            return@withContext Result.failure(checked.exceptionOrNull()!!)
+        val chosen = selected ?: return@withContext Result.failure(
+            IOException("未选中有效 YouTube 下载格式"))
+        if (chosen.isVideoOnly && task.downloadType == DownloadType.VIDEO_WITH_AUDIO) {
+            var audioUrl = if (metadata == null) task.directAudioUrl else
+                metadata!!.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
+            if (audioUrl.isBlank()) {
+                metadata = extract(task.url, proxy).getOrElse {
+                    return@withContext Result.failure(it)
+                }
+                audioUrl = metadata!!.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
+            }
+            if (audioUrl.isBlank())
+                return@withContext Result.failure(IOException("高画质 DASH 缺少可用 AAC 音轨"))
+            var checkedAudio = verifyMediaRange(audioUrl, proxy, headers)
+            if (checkedAudio.isFailure && metadata == null) {
+                metadata = extract(task.url, proxy).getOrElse {
+                    return@withContext Result.failure(it)
+                }
+                audioUrl = metadata!!.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
+                if (audioUrl.isBlank())
+                    return@withContext Result.failure(IOException("重新解析后 AAC 音轨不可用"))
+                headers = metadata!!.mediaHeaders.ifEmpty { headers }
+                checkedAudio = verifyMediaRange(audioUrl, proxy, headers)
+            }
+            if (checkedAudio.isFailure)
+                return@withContext Result.failure(checkedAudio.exceptionOrNull()!!)
+            val videoFile = File(staging, "yt_" + task.id + "_video.m4v")
+            val audioFile = File(staging, "yt_" + task.id + "_audio.m4a")
+            val mergedFile = File(staging, "yt_" + task.id + "_merged.mp4")
+            if (cancelled.contains(task.id))
+                return@withContext Result.failure(IOException("下载已取消"))
+
+            val v = NativeTransfer.download(
+                context, videoTask, chosen.formatId, videoFile, headers, proxy
+            ) { pct, speed, eta, status ->
+                progress((pct * 0.69f).coerceIn(1f, 69f), speed, eta, status)
+            }
+            if (v.isFailure) return@withContext Result.failure(v.exceptionOrNull()!!)
+            if (!DownloadEngine.isValidMediaFile(videoFile))
+                return@withContext Result.failure(IOException("DASH 视频轨不是有效媒体文件"))
+            if (cancelled.contains(task.id))
+                return@withContext Result.failure(IOException("下载已取消"))
+
+            val a = NativeTransfer.download(
+                context, audioTask, audioUrl, audioFile, headers, proxy
+            ) { pct, speed, eta, status ->
+                progress((70f + pct * 0.23f).coerceIn(70f, 93f), speed, eta, status)
+            }
+            if (a.isFailure) return@withContext Result.failure(a.exceptionOrNull()!!)
+            if (!DownloadEngine.isValidMediaFile(audioFile))
+                return@withContext Result.failure(IOException("DASH AAC 音轨不是有效媒体文件"))
+            if (cancelled.contains(task.id))
+                return@withContext Result.failure(IOException("下载已取消"))
+            progress(95f, "", "使用 Android MediaMuxer 合并音视频...", TaskStatus.PROCESSING)
+            val merged = FFmpegExecutor.mergeVideoAndAudio(
+                context, videoFile, audioFile, mergedFile
+            )
+            if (merged.isFailure) return@withContext Result.failure(
+                IOException("系统原生 MP4 混流失败：" +
+                    merged.exceptionOrNull()?.message.orEmpty(), merged.exceptionOrNull())
+            )
+            if (!DownloadEngine.isValidMediaFile(mergedFile) || cancelled.contains(task.id)) {
+                mergedFile.delete()
+                return@withContext Result.failure(IOException("合并后文件无效或任务已取消"))
+            }
+            val base = task.title.replace(Regex("""[\\/:*?"<>|]"""), "_")
+                .trim().ifBlank { "YouTube" }.take(64)
+            var destination = File(output, base + ".mp4")
+            var seq = 1
+            while (destination.exists()) {
+                destination = File(output, base + "_" + seq++ + ".mp4")
+            }
+            try {
+                mergedFile.copyTo(destination, overwrite = false)
+                MediaScannerConnection.scanFile(
+                    context, arrayOf(destination.absolutePath), arrayOf("video/mp4"), null
+                )
+                videoFile.delete()
+                audioFile.delete()
+                mergedFile.delete()
+                progress(100f, "", "", TaskStatus.COMPLETED)
+                return@withContext Result.success(destination.absolutePath)
+            } catch (e: Exception) {
+                destination.delete()
+                return@withContext Result.failure(e)
+            }
+        }
+        if (cancelled.contains(task.id))
+            return@withContext Result.failure(IOException("下载已取消"))
+        DownloadEngine.downloadDirectMediaStream(
+            context, task, chosen.formatId, proxy, staging, output, progress,
+            headers
+        )
+    }
+}

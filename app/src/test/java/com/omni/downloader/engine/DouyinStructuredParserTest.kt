@@ -42,4 +42,59 @@ class DouyinStructuredParserTest {
            "video":{"play_addr":{"url_list":["https://cdn.test/other.mp4"]}}}]}"""
         assertNull(DouyinStructuredParser.parse(json, id, url))
     }
+    @Test fun galleryKeepsDuplicatePhotosAndMirrorUrls() {
+        val json = """{"aweme_detail":{"aweme_id":"$id","aweme_type":68,"desc":"Duplicated",
+          "images":[
+            {"width":1080,"height":1920,
+             "url_list":["https://img.test/repeated.jpg","https://mirror.test/repeated.jpg"],
+             "video":{"play_addr":{"url_list":["https://img.test/live.mp4"]}}},
+            {"width":720,"height":1280,"url_list":["https://img.test/repeated.jpg"]}
+          ]}}}"""
+        val result = DouyinStructuredParser.parse(json, id, url)!!
+        assertEquals(2, result.multiMediaList.size)
+        assertEquals(listOf(0, 1), result.imageAssets.map { it.index })
+        assertEquals("https://img.test/repeated.jpg", result.imageAssets[0].url)
+        assertEquals("https://img.test/repeated.jpg", result.imageAssets[1].url)
+        assertEquals(listOf("https://mirror.test/repeated.jpg"), result.imageAssets[0].mirrors)
+        assertEquals("https://img.test/live.mp4", result.imageAssets[0].liveVideoUrl)
+        assertEquals(1080, result.imageAssets[0].width)
+    }
+
+    @Test fun corruptedGalleryEntryDoesNotSilentlyDropAnImage() {
+        val json = """{"aweme_detail":{"aweme_id":"$id","aweme_type":68,
+            "images":[{"url_list":["https://img.test/1.jpg"]},{"url_list":[]}]}}"""
+        assertNull(DouyinStructuredParser.parse(json, id, url))
+    }
+
+    @Test fun videosExposeResolutionsAndNeverClaimStringReplacedWatermarkRemoval() {
+        val json = """{"aweme_detail":{"aweme_id":"$id","desc":"Video",
+          "video":{"bit_rate":[
+            {"play_addr":{"width":720,"height":1280,"url_list":["https://cdn.test/720.mp4"]}},
+            {"play_addr":{"width":1080,"height":1920,"url_list":["https://cdn.test/playwm-1080.mp4"]}}
+          ]}}}"""
+        val result = DouyinStructuredParser.parse(json, id,
+            "https://www.iesdouyin.com/share/video/$id")!!
+        assertEquals(2, result.availableVideoFormats.size)
+        assertEquals(1920, result.availableVideoFormats.first().height)
+        assertEquals("https://cdn.test/playwm-1080.mp4", result.availableVideoFormats.first().formatId)
+        assertTrue(result.availableVideoFormats.first().note.contains("未验证"))
+    }
+
+    @Test fun originalImageUrlHasPriorityOverDisplayThumbnail() {
+        val json = """{"aweme_detail":{"aweme_id":"$id","desc":"Original",
+           "images":[{"url_list":["https://cdn.test/original.jpg"],
+           "display_image":{"url_list":["https://cdn.test/preview.jpg"]}}]}}"""
+        val meta = DouyinStructuredParser.parse(json, id,
+            "https://www.iesdouyin.com/share/video/$id")!!
+        assertEquals("图文", meta.siteName)
+        assertEquals("https://cdn.test/original.jpg", meta.imageAssets.first().url)
+        assertEquals("https://cdn.test/preview.jpg", meta.imageAssets.first().mirrors.single())
+    }
+
+    @Test fun incompleteSlideDetailMustNotBeParsedAsVideo() {
+        val json = """{"aweme_detail":{"aweme_id":"$id","aweme_type":68,
+           "video":{"play_addr":{"url_list":["https://cdn.test/not-the-album.mp4"]}}}}"""
+        assertNull(DouyinStructuredParser.parse(json, id, url))
+    }
+
 }

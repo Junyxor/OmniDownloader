@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit
  * https://docs.fxembed.com/api/introduction/
  *
  * Sends only the public tweet status ID to a third-party public API. If this
- * service is unavailable, the caller may fall back to the local Lux extractor.
+ * Errors are reported to the caller; there is no embedded external extractor.
  */
 object XPublicExtractor {
     private val client = OkHttpClient.Builder()

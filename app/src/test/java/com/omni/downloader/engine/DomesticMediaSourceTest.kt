@@ -30,6 +30,7 @@ class DomesticMediaSourceTest {
         val task = Json.decodeFromString<DownloadTask>(old)
         assertEquals("", task.directMediaUrl)
         assertTrue(task.directMediaHeaders.isEmpty())
+        assertTrue(task.directMediaAlternates.isEmpty())
     }
 
     @Test fun collectionUsesEachEpisodesOwnSource() {
@@ -53,4 +54,63 @@ class DomesticMediaSourceTest {
     @Test fun extractorFormatIdsAreNotMistakenForUrls() {
         assertEquals("", DomesticMediaSource.url(metadata(url = "137")))
     }
+    @Test fun galleryMirrorsSurviveTaskPersistence() {
+        val original = "https://cdn.example.net/primary.jpg"
+        val mirrors = listOf("https://backup.example.net/image.jpg", "https://backup2.example.net/image.jpg")
+        val task = DownloadTask(
+            id = "gallery", url = "https://www.iesdouyin.com/share/slides/7700835139168900858#omni_douyin_image=0",
+            title = "gallery", downloadType = DownloadType.COVER,
+            parserId = "douyin", directMediaUrl = original, directMediaAlternates = mirrors
+        )
+        val restored = Json.decodeFromString<DownloadTask>(Json.encodeToString(task))
+        assertEquals(original, restored.directMediaUrl)
+        assertEquals(mirrors, restored.directMediaAlternates)
+        assertEquals("douyin", restored.parserId)
+    }
+
+    @Test fun youtubeSignedMediaUrlsCanPersistWithoutAnotherPageRequest() {
+        val src = "https://r1.googlevideo.com/videoplayback?expire=123&itag=137"
+        val audio = "https://r2.googlevideo.com/videoplayback?expire=123&itag=140"
+        val task = DownloadTask(
+            id = "cached-yt", url = "https://www.youtube.com/watch?v=gjUzH4UcSkw",
+            title = "test", downloadType = DownloadType.VIDEO_WITH_AUDIO,
+            selectedResolution = "1080p DASH (itag 137)",
+            directMediaUrl = src, directAudioUrl = audio, parserId = "youtube-native"
+        )
+        val restored = Json.decodeFromString<DownloadTask>(Json.encodeToString(task))
+        assertEquals(src, restored.directMediaUrl)
+        assertEquals(audio, restored.directAudioUrl)
+        assertEquals("youtube-native", restored.parserId)
+    }
+
+    @Test fun youtubePlayerRequestHeadersSurviveTaskPersistence() {
+        val headers = mapOf(
+            "User-Agent" to "com.google.ios.youtube/21.26.4 (iPhone16,2)",
+            "Referer" to "https://www.youtube.com/watch?v=gjUzH4UcSkw"
+        )
+        val metadata = VideoMetadata(
+            url = "https://www.youtube.com/watch?v=gjUzH4UcSkw",
+            title = "Test YouTube",
+            siteName = "YouTube",
+            parserId = "youtube-native",
+            mediaHeaders = headers
+        )
+        val restoredMeta = Json.decodeFromString<VideoMetadata>(
+            Json.encodeToString(metadata)
+        )
+        assertEquals(headers, restoredMeta.mediaHeaders)
+        val task = DownloadTask(
+            id = "yt-headers",
+            url = metadata.url,
+            title = metadata.title,
+            downloadType = DownloadType.VIDEO_WITH_AUDIO,
+            parserId = metadata.parserId,
+            directMediaHeaders = metadata.mediaHeaders
+        )
+        val restoredTask = Json.decodeFromString<DownloadTask>(
+            Json.encodeToString(task)
+        )
+        assertEquals(headers, restoredTask.directMediaHeaders)
+    }
+
 }

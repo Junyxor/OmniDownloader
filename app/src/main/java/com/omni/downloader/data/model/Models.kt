@@ -43,6 +43,17 @@ data class FormatOption(
     val note: String = ""
 )
 
+/** One gallery item, including mirror URLs and optional Live Photo clip. */
+@Serializable
+data class GalleryImage(
+    val index: Int,
+    val url: String,
+    val mirrors: List<String> = emptyList(),
+    val width: Int = 0,
+    val height: Int = 0,
+    val liveVideoUrl: String? = null
+)
+
 /**
  * 视频解析出来的元数据
  */
@@ -58,7 +69,10 @@ data class VideoMetadata(
     val availableVideoFormats: List<FormatOption> = emptyList(),
     val availableAudioFormats: List<FormatOption> = emptyList(),
     val multiMediaList: List<VideoMetadata> = emptyList(), // 包含推文中的全部独立视频
-    val parserId: String = "" // "lux", "douyin" or native default; prevent wrong decoder on download
+    val parserId: String = "", // "lux", "douyin" or native default; prevent wrong decoder on download
+    val imageAssets: List<GalleryImage> = emptyList(),
+    // Headers from the same official player client that produced these streams.
+    val mediaHeaders: Map<String, String> = emptyMap()
 )
 
 /**
@@ -105,5 +119,11 @@ data class DownloadTask(
     // 已解析的国内媒体源与请求头，独立于 UI 清晰度标签，并随任务持久化。
     val directMediaUrl: String = "",
     val directMediaHeaders: Map<String, String> = emptyMap(),
+    // CDN mirrors for a single image resource. Kept across queue persistence so each
+    // gallery item can be downloaded without signing/re-fetching the entire post.
+    val directMediaAlternates: List<String> = emptyList(),
+    // Optional signed audio CDN URL selected alongside the YouTube DASH video.
+    // Stored locally; never logged or uploaded.
+    val directAudioUrl: String = "",
     val parserId: String = "" // persistent extractor identity for correct task resume
 )

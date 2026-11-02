@@ -19,7 +19,7 @@
 
 </div>
 
-> **Android v1.6.3 Native Beta 2（仅本重构分支）**：aria2 高速下载 + MIT 许可证 **Lux Go 原生解析器**，为 YouTube、Instagram、Facebook、Pinterest、抖音等站点提供实际解析入口；公开 X 帖子可先经 [FxEmbed](https://docs.fxembed.com/api/introduction/) 第三方公共 API 获取媒体，失败后回退 Lux。支持部分米游社公开文章、抖音图文原图和 HTML5 网页。**这仍是 Beta：不能保证每条分享链接均成功，登录限制、反爬和 DRM 仍可能影响解析。** Android 内置 Python/FFmpeg 依赖已移除；HLS、多种转码及部分分轨封装格式尚未实现。此仓库其他端与历史版本功能不等于 Android Beta 的功能。
+> **Android v1.6.3 Native Beta（仅独立开发分支）**：Android 端使用 **aria2** 作为唯一媒体下载引擎，Kotlin/OkHttp 原生解析公开平台媒体（Bilibili、抖音、快手、小红书、TikTok、X 公开帖子、HTML5 网页）；YouTube 采用播放器 JSON/Innertube 直链解析，**不打包 Lux、Python、yt-dlp、JS 运行时或 FFmpeg**。YouTube 加密签名、PO Token、DASH 分轨与受限内容尚未完全支持；Instagram/Facebook/Pinterest 仅在网页公开媒体直链时可用，不能保证每条分享链接都支持。
 
 
 ---
@@ -28,7 +28,7 @@
 
 | 平台形态 | 适用设备 | 核心技术栈 | 获取与安装方式 |
 | :--- | :--- | :--- | :--- |
-| **🤖 Android 原生版** | Android 手机 / 平板 / 车机 / 电视 (Android 8.0+) | Kotlin + Compose + aria2 + Lux（Go/MIT）+ OkHttp + Android MediaMuxer | [本分支测试 APK（Actions）](https://github.com/Junyxor/OmniDownloader/actions/workflows/aria2-native-apk.yml) |
+| **🤖 Android 原生版** | Android 手机 / 平板 / 车机 / 电视 (Android 8.0+) | Kotlin + Compose + aria2 + 原生 Kotlin 解析 + OkHttp + Android MediaMuxer | [本分支测试 APK（Actions）](https://github.com/Junyxor/OmniDownloader/actions/workflows/aria2-native-apk.yml) |
 | **🍎 iOS 原生版** | iPhone / iPad (iOS 15.0+) | Swift 5.9 + SwiftUI + AVFoundation 原生硬件混流 + Photos 相簿 | 源码工程在 [`OmniDownloader-iOS`](OmniDownloader-iOS)，支持 GitHub Actions 免费打包 IPA 并通过 TrollStore 巨魔或自签侧载 |
 | **💻 Windows 桌面版** | Windows 10 / 11 (64位) | Python 3 + FastAPI + Edge WebView2 原生独立窗口 + 内置 FFmpeg | 下载 [`windows/release/OmniDownloader_桌面独立版.zip`](windows/release/)，免环境解压即用，附带多国语言说明 |
 | **🌐 Web 网页纯后台版** | Windows 电脑，支持局域网内任意手机/平板浏览器访问 | 轻量托盘守护进程 + 本地 Web 服务 + 内置 FFmpeg | 下载 [`windows/release/OmniDownloader_网页纯后台版.zip`](windows/release/)，静默常驻托盘，支持浏览器原生接管下载 |
@@ -48,9 +48,9 @@
   - **小红书 (Xiaohongshu)**：图文笔记及超清视频极速抓取。
 - **米哈游百科 / 部分米游社公开帖子视频**：Android 原生解析公开词条与部分含 VOD 的社区帖子，可选源画质；需要登录、专用播放器或非公开视频不保证支持。
 - **国际主流媒体全方位覆盖**：
-  - **YouTube**：已集成本地 Lux 解析器，可获取公开视频的可用流；站点验证与分轨混流仍需真机测试。
+  - **YouTube**：原生解析公开的完整视频流与 M4A 音频流；加密签名、PO Token 和 DASH 分轨可能导致解析失败，不作完整兼容承诺。
   - **TikTok**：免登录绕过 WAF，提取 1080P 原生无水印直链；
-  - **X / Instagram / Facebook / Pinterest**：已接入 Lux 原生站点解析；X 的公开帖子还支持 FxEmbed 公共 API 回退（访问第三方 API 时发送公开帖子 ID），登录/私密内容未承诺支持。
+  - **X / Instagram / Facebook / Pinterest**：X 使用公开帖子接口；其余站点使用 Kotlin HTML5/OpenGraph/JSON-LD 直链识别，尚不支持所有登录/私密与动态媒体页面。
 
 ### 2. 🎬 丰富的导出与转码模式
 - **音画合流 (MP4)**：自由挑选目标清晰度（4K、2K、1080P、720P），毫秒级无损合并音视频轨道。

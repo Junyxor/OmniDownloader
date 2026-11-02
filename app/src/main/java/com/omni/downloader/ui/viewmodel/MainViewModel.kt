@@ -287,15 +287,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             downloadType = type,
             selectedResolution = resolutionLabel,
             audioFormat = audioFormat,
-            directMediaUrl = DomesticMediaSource.url(currentMeta, format),
-            directMediaHeaders = DomesticMediaSource.headers(currentMeta.siteName),
+            directMediaUrl = if (currentMeta.parserId == "youtube-native") {
+                if (type == DownloadType.AUDIO_ONLY)
+                    currentMeta.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
+                else format?.formatId.orEmpty()
+            } else currentMeta.imageAssets.firstOrNull()?.url
+                ?: DomesticMediaSource.url(currentMeta, format),
+            directAudioUrl = if (currentMeta.parserId == "youtube-native")
+                currentMeta.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
+                else "",
+            directMediaHeaders = if (currentMeta.parserId == "youtube-native")
+                currentMeta.mediaHeaders
+                else if (currentMeta.parserId == "douyin" && currentMeta.imageAssets.isNotEmpty())
+                mapOf("Referer" to "https://www.douyin.com/")
+                else DomesticMediaSource.headers(currentMeta.siteName),
+            directMediaAlternates = currentMeta.imageAssets.firstOrNull()?.mirrors.orEmpty(),
             parserId = currentMeta.parserId
         )
 
         repository.addTask(task)
         DownloadService.startDownload(context, task.id)
 
-        if (saveCover && currentMeta.thumbnailUrl.isNotBlank()) {
+        if (saveCover && currentMeta.siteName != "图文" && currentMeta.thumbnailUrl.isNotBlank()) {
             val coverTask = DownloadTask(
                 id = UUID.randomUUID().toString().replace("-", "").take(12),
                 url = currentMeta.url,
@@ -438,13 +451,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 collectionTitle = if (isCollection) collectionTitle else null,
                 episodeIndex = if (isCollection) index + 1 else 0,
                 episodeTotal = if (isCollection) totalEpisodes else 0,
-                directMediaUrl = DomesticMediaSource.url(sub, format),
-                directMediaHeaders = DomesticMediaSource.headers(sub.siteName),
+                directMediaUrl = if (sub.parserId == "youtube-native") {
+                    if (finalType == DownloadType.AUDIO_ONLY)
+                        sub.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
+                    else sub.availableVideoFormats.firstOrNull {
+                        it.resolutionLabel == resolutionLabel
+                    }?.formatId ?: sub.availableVideoFormats.firstOrNull()?.formatId.orEmpty()
+                } else sub.imageAssets.firstOrNull()?.url
+                    ?: DomesticMediaSource.url(sub, format),
+                directAudioUrl = if (sub.parserId == "youtube-native")
+                    sub.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
+                    else "",
+                directMediaHeaders = if (sub.parserId == "youtube-native")
+                    sub.mediaHeaders
+                    else if (sub.parserId == "douyin" && sub.imageAssets.isNotEmpty())
+                    mapOf("Referer" to "https://www.douyin.com/")
+                    else DomesticMediaSource.headers(sub.siteName),
+                directMediaAlternates = sub.imageAssets.firstOrNull()?.mirrors.orEmpty(),
                 parserId = sub.parserId
             )
             tasksToAdd.add(task)
 
-            if (saveCover && sub.thumbnailUrl.isNotBlank()) {
+            if (saveCover && sub.siteName != "图文" && sub.thumbnailUrl.isNotBlank()) {
                 val coverTask = DownloadTask(
                     id = UUID.randomUUID().toString().replace("-", "").take(12),
                     url = sub.url,

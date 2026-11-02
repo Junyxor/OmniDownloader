@@ -11,33 +11,21 @@ import com.omni.downloader.data.model.TaskStatus
 import com.omni.downloader.data.model.VideoMetadata
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.File
 import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
 
 /** Lightweight native engine: no Python, yt-dlp, or bundled FFmpeg. */
 object DownloadEngine {
     private val cancelled = ConcurrentHashMap.newKeySet<String>()
-    private val http = OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(40, TimeUnit.SECONDS).followRedirects(true).build()
     @Volatile private var ready = false
     @Volatile private var initError: String? = null
 
     suspend fun ensureInitialized(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
-        val aria = Aria2Downloader.isAvailable(context)
-        val lux = LuxExtractor.isAvailable(context)
-        ready = aria && lux
-        initError = when {
-            !aria -> "ARM64 aria2c 下载核心缺失"
-            !lux -> "ARM64 Lux 多站点解析核心缺失"
-            else -> null
-        }
+        ready = Aria2Downloader.isAvailable(context)
+        initError = if (ready) null else "ARM64 aria2c 下载核心缺失或无法执行"
         if (ready) Result.success(Unit) else Result.failure(IOException(initError))
     }
     fun isReady(): Boolean = ready
@@ -65,36 +53,20 @@ object DownloadEngine {
             when {
                 MihoyoVideoExtractor.isSupported(url) -> MihoyoVideoExtractor.extract(url)
                 site == "哔哩哔哩" -> BilibiliDirectExtractor.extract(url)
-                site == "TikTok" || TikTokDirectExtractor.isSupported(url) -> {
-                    val direct = TikTokDirectExtractor.extract(url)
-                    if (direct.isSuccess) direct else LuxExtractor.extract(context, url, proxyUrl)
-                }
-                DomesticDirectExtractor.isSupported(site) -> {
-                    val direct = DomesticDirectExtractor.extract(url, site)
-                    if (direct.isSuccess) direct else {
-                        val lux = LuxExtractor.extract(context, url, proxyUrl)
-                        if (lux.isSuccess) lux else Result.failure(IOException(
-                            "$site 原生解析失败：" + direct.exceptionOrNull()?.message +
-                            "；Lux 后备解析失败：" + lux.exceptionOrNull()?.message
-                        ))
-                    }
-                }
+                site == "YouTube" -> YouTubeNativeExtractor.extract(url, proxyUrl)
+                site == "TikTok" || TikTokDirectExtractor.isSupported(url) ->
+                    TikTokDirectExtractor.extract(url)
+                DomesticDirectExtractor.isSupported(site) ->
+                    DomesticDirectExtractor.extract(url, site)
                 UrlSniffer.isDirectMediaUrl(url) && !UrlSniffer.isM3u8Url(url) ->
                     Result.success(VideoMetadata(
                         url = url, title = "直接媒体文件", siteName = "直链",
                         availableVideoFormats = listOf(FormatOption(url, "原始媒体", ext = "mp4"))
                     ))
-                site == "X (Twitter)" -> {
-                    // Public-status API fallback independent of Lux's older Twitter API.
-                    val fx = XPublicExtractor.extract(url)
-                    if (fx.isSuccess) fx else LuxExtractor.extract(context, url, proxyUrl)
-                }
-                LuxExtractor.supports(site) -> {
-                    val lux = LuxExtractor.extract(context, url, proxyUrl)
-                    if (lux.isSuccess) lux else if (site == "网络视频") {
-                        GenericWebVideoExtractor.extract(url)
-                    } else lux
-                }
+                site == "X (Twitter)" -> XPublicExtractor.extract(url)
+                // Native extraction of public HTML5, OpenGraph and JSON-LD
+                // media for Instagram / Facebook / Pinterest where published.
+                // Requires a verified direct URL; no bundled tool or proxy site.
                 else -> GenericWebVideoExtractor.extract(url)
             }
         } catch (e: Exception) { Result.failure(e) }
@@ -103,64 +75,38 @@ object DownloadEngine {
     suspend fun downloadCoverFile(
         context: Context, coverUrl: String, title: String, proxyUrl: String = "",
         publicDir: File = getDownloadDir(context),
-        onProgressUpdate: ((Float, String, String, TaskStatus) -> Unit)? = null
+        onProgressUpdate: ((Float, String, String, TaskStatus) -> Unit)? = null,
+        taskId: String = "cover-" + java.util.UUID.randomUUID().toString()
     ): Result<String> = withContext(Dispatchers.IO) {
+        val cache = File(context.noBackupFilesDir, "image-staging").apply { mkdirs() }
+        val staged = File(cache, "image_" + taskId.replace(Regex("[^a-zA-Z0-9_-]"), "_") + ".part")
         try {
+            if (!coverUrl.startsWith("https://") && !coverUrl.startsWith("http://"))
+                throw IOException("封面 URL 无效")
             publicDir.mkdirs()
-            val req = Request.Builder().url(coverUrl)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36")
-                .apply { refererFor(coverUrl).takeIf { it.isNotBlank() }?.let { header("Referer", it) } }
-                .build()
-            onProgressUpdate?.invoke(5f, "", "下载封面...", TaskStatus.DOWNLOADING)
-            http.newCall(req).execute().use { response ->
-                if (!response.isSuccessful) throw IOException("封面下载失败 HTTP ${response.code}")
-                val mime = response.header("Content-Type").orEmpty().lowercase(Locale.ROOT)
-                val body = response.body ?: throw IOException("图片响应为空")
-                body.byteStream().buffered().use { input ->
-                    input.mark(32)
-                    val header = ByteArray(24)
-                    val length = input.read(header)
-                    input.reset()
-                    val ascii = if (length > 0)
-                        String(header, 0, length, Charsets.ISO_8859_1) else ""
-                    val signature = when {
-                        length >= 3 && header[0] == 0xff.toByte() &&
-                            header[1] == 0xd8.toByte() && header[2] == 0xff.toByte() -> "jpg"
-                        length >= 8 && header[0] == 0x89.toByte() &&
-                            ascii.substring(1, 4) == "PNG" -> "png"
-                        length >= 12 && ascii.startsWith("RIFF") &&
-                            ascii.substring(8, 12) == "WEBP" -> "webp"
-                        ascii.startsWith("GIF8") -> "gif"
-                        length >= 12 && ascii.substring(4, 8) == "ftyp" &&
-                            ascii.substring(8, 12) in setOf("avif", "avis") -> "avif"
-                        length >= 12 && ascii.substring(4, 8) == "ftyp" &&
-                            ascii.substring(8, 12).startsWith("hei") -> "heic"
-                        else -> null
-                    }
-                    if (!mime.startsWith("image/") && signature == null)
-                        throw IOException("返回的不是图片数据，而是 " + mime)
-                    val ext = signature ?: when {
-                        "png" in mime -> "png"
-                        "webp" in mime -> "webp"
-                        "gif" in mime -> "gif"
-                        "avif" in mime -> "avif"
-                        "heic" in mime -> "heic"
-                        else -> "jpg"
-                    }
-                    val out = uniqueFile(publicDir, safeTitle(title) + "_cover", ext)
-                    try {
-                        FileOutputStream(out).use { dest -> input.copyTo(dest) }
-                        if (out.length() == 0L) throw IOException("图片为空")
-                        MediaScannerConnection.scanFile(context,
-                            arrayOf(out.absolutePath), null, null)
-                        onProgressUpdate?.invoke(100f, "", "", TaskStatus.COMPLETED)
-                        Result.success(out.absolutePath)
-                    } catch (e: Exception) {
-                        out.delete()
-                        throw e
-                    }
-                }
-
+            val headers = mutableMapOf("User-Agent" to
+                "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36")
+            refererFor(coverUrl).takeIf { it.isNotBlank() }?.let { headers["Referer"] = it }
+            val downloaded = NativeTransfer.download(
+                context, taskId, coverUrl, staged, headers, proxyUrl
+            ) { p, speed, eta, status ->
+                onProgressUpdate?.invoke(p, speed, eta, status)
+            }
+            downloaded.getOrThrow()
+            val extension = ImageMagic.extension(staged)
+                ?: throw IOException("封面响应不是合法图片（可能是风控或过期地址）")
+            val out = uniqueFile(publicDir, safeTitle(title) + "_cover", extension)
+            try {
+                staged.copyTo(out, overwrite = false)
+                staged.delete()
+                MediaScannerConnection.scanFile(
+                    context, arrayOf(out.absolutePath), null, null
+                )
+                onProgressUpdate?.invoke(100f, "", "", TaskStatus.COMPLETED)
+                Result.success(out.absolutePath)
+            } catch (e: Exception) {
+                out.delete()
+                throw e
             }
         } catch (e: Exception) {
             onProgressUpdate?.invoke(0f, "", "", TaskStatus.FAILED)
@@ -178,10 +124,17 @@ object DownloadEngine {
         val site = UrlSniffer.identifySite(url)
         val staging = File(context.noBackupFilesDir, "native-staging").apply { mkdirs() }
         val output = getDownloadDir(context).apply { mkdirs() }
-        // Route via the parser that actually produced the selected formats.
-        // In particular, do not send a Lux YouTube stream through an unrelated site adapter.
+        // Previously persisted Lux tasks have incompatible format identifiers.
+        // They must be re-parsed, not silently downloaded at the wrong quality.
         if (task.parserId == "lux") {
-            return@withContext LuxExtractor.download(context, task, staging, output, onProgressUpdate, proxyUrl)
+            return@withContext Result.failure(IOException(
+                "旧版 Lux 任务不可直接恢复，请重新解析原始链接生成原生下载任务"
+            ))
+        }
+        if (task.parserId == "youtube-native") {
+            return@withContext YouTubeNativeExtractor.download(
+                context, task, staging, output, onProgressUpdate, proxyUrl
+            )
         }
         if (task.parserId == "fx") {
             return@withContext XPublicExtractor.download(context, task, staging, output, onProgressUpdate, proxyUrl)
@@ -191,7 +144,7 @@ object DownloadEngine {
         }
         if (task.downloadType == DownloadType.COVER) {
             return@withContext downloadCoverFile(context, task.thumbnailUrl.ifBlank { task.url }, task.title,
-                proxyUrl, output, onProgressUpdate)
+                proxyUrl, output, onProgressUpdate, task.id)
         }
         try {
             when {
@@ -199,6 +152,8 @@ object DownloadEngine {
                     MihoyoVideoExtractor.download(context, task, staging, output, onProgressUpdate, proxyUrl)
                 site == "哔哩哔哩" ->
                     BilibiliDirectExtractor.download(context, task, staging, output, onProgressUpdate)
+                site == "YouTube" ->
+                    YouTubeNativeExtractor.download(context, task, staging, output, onProgressUpdate, proxyUrl)
                 site == "TikTok" || TikTokDirectExtractor.isSupported(url) ->
                     TikTokDirectExtractor.download(context, task, staging, output, onProgressUpdate)
                 DomesticDirectExtractor.isSupported(site) ->
@@ -293,7 +248,7 @@ object DownloadEngine {
     fun cancelTask(taskId: String) {
         cancelled.add(taskId)
         NativeTransfer.cancel(taskId)
-        LuxExtractor.cancel(taskId)
+        YouTubeNativeExtractor.cancel(taskId)
     }
 
     private fun safeTitle(value: String): String =
@@ -362,8 +317,8 @@ object DownloadEngine {
     }
 
     suspend fun updateEngine(context: Context): Result<String> = withContext(Dispatchers.IO) {
-        if (Aria2Downloader.isAvailable(context) && LuxExtractor.isAvailable(context))
-            Result.success("aria2 下载器与 Lux 多站点解析器均已安装，无需 Python 运行时")
-        else Result.failure(IOException("aria2 / Lux 原生模块不完整，请重新安装"))
+        if (Aria2Downloader.isAvailable(context))
+            Result.success("aria2 下载核心就绪；平台解析均为轻量原生模块")
+        else Result.failure(IOException("aria2 原生模块不完整，请重新安装"))
     }
 }
