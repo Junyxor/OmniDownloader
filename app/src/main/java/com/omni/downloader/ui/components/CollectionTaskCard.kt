@@ -391,6 +391,12 @@ fun CollectionTaskCard(
                         onClick = { onResumeCollection(collectionId) }
                     )
                     Spacer(modifier = Modifier.width(8.dp))
+                    CollectionActionBtn(
+                        icon = Icons.Outlined.Close,
+                        text = strings.collectionCancelAll,
+                        isPrimary = false,
+                        onClick = { showCancelDialog = true }
+                    )
                 }
 
                 if (isAllCompleted) {
