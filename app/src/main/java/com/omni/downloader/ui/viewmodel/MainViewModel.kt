@@ -296,7 +296,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             directAudioUrl = if (currentMeta.parserId == "youtube-native")
                 currentMeta.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
                 else "",
-            directMediaHeaders = if (currentMeta.parserId == "douyin" && currentMeta.imageAssets.isNotEmpty())
+            directMediaHeaders = if (currentMeta.parserId == "youtube-native")
+                currentMeta.mediaHeaders
+                else if (currentMeta.parserId == "douyin" && currentMeta.imageAssets.isNotEmpty())
                 mapOf("Referer" to "https://www.douyin.com/")
                 else DomesticMediaSource.headers(currentMeta.siteName),
             directMediaAlternates = currentMeta.imageAssets.firstOrNull()?.mirrors.orEmpty(),
@@ -460,7 +462,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 directAudioUrl = if (sub.parserId == "youtube-native")
                     sub.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
                     else "",
-                directMediaHeaders = if (sub.parserId == "douyin" && sub.imageAssets.isNotEmpty())
+                directMediaHeaders = if (sub.parserId == "youtube-native")
+                    sub.mediaHeaders
+                    else if (sub.parserId == "douyin" && sub.imageAssets.isNotEmpty())
                     mapOf("Referer" to "https://www.douyin.com/")
                     else DomesticMediaSource.headers(sub.siteName),
                 directMediaAlternates = sub.imageAssets.firstOrNull()?.mirrors.orEmpty(),

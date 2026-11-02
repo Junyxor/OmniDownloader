@@ -358,11 +358,12 @@ object YouTubeNativeExtractor {
      */
     private fun filterVerifiedFormats(
         meta: VideoMetadata,
-        proxy: String
+        proxy: String,
+        headers: Map<String, String>
     ): Result<VideoMetadata> = runCatching {
         val audio = mutableListOf<FormatOption>()
         for (option in meta.availableAudioFormats.take(2)) {
-            if (verifyMediaRange(option.formatId, proxy).isSuccess) {
+            if (verifyMediaRange(option.formatId, proxy, headers).isSuccess) {
                 audio += option
                 break
             }
@@ -372,7 +373,7 @@ object YouTubeNativeExtractor {
         // sufficient to show a usable choice without hammering the CDN.
         for (option in meta.availableVideoFormats.take(6)) {
             if (option.isVideoOnly && audio.isEmpty()) continue
-            if (verifyMediaRange(option.formatId, proxy).isSuccess) {
+            if (verifyMediaRange(option.formatId, proxy, headers).isSuccess) {
                 video += option
                 if (video.size >= 2) break
             }
@@ -382,7 +383,8 @@ object YouTubeNativeExtractor {
         }
         meta.copy(
             availableVideoFormats = video,
-            availableAudioFormats = audio
+            availableAudioFormats = audio,
+            mediaHeaders = headers
         )
     }
 
@@ -414,14 +416,18 @@ object YouTubeNativeExtractor {
                     responseBody.charStream().use { it.readText().take(3 * 1024 * 1024) }
                 }
                 val errors = mutableListOf<String>()
-                fun tryResponse(clientLabel: String, json: String): VideoMetadata? {
+                fun tryResponse(
+                    clientLabel: String,
+                    json: String,
+                    headers: Map<String, String>
+                ): VideoMetadata? {
                     val parsed = parsePlayer(json, id)
                     if (parsed.isFailure) {
                         errors += "$clientLabel: " +
                             parsed.exceptionOrNull()?.message.orEmpty()
                         return null
                     }
-                    val filtered = filterVerifiedFormats(parsed.getOrThrow(), proxy)
+                    val filtered = filterVerifiedFormats(parsed.getOrThrow(), proxy, headers)
                     if (filtered.isSuccess) return filtered.getOrThrow()
                     errors += "$clientLabel: " +
                         filtered.exceptionOrNull()?.message.orEmpty()
@@ -430,7 +436,10 @@ object YouTubeNativeExtractor {
 
                 val initial = jsonAfter(html, "ytInitialPlayerResponse")
                 if (initial != null)
-                    tryResponse("网页初始播放器", initial)?.let { return@runCatching it }
+                    tryResponse(
+                        "网页初始播放器", initial,
+                        mapOf("User-Agent" to UA, "Referer" to canonical)
+                    )?.let { return@runCatching it }
 
                 val config = playerConfigFromHtml(html)
                 val apiKey = config.optString("INNERTUBE_API_KEY")
@@ -477,7 +486,12 @@ object YouTubeNativeExtractor {
                             result.exceptionOrNull()?.message.orEmpty()
                         continue
                     }
-                    tryResponse(spec.name, result.getOrThrow())
+                    val mediaHeaders = mapOf(
+                        "User-Agent" to spec.userAgent,
+                        "Referer" to if (spec.embedded)
+                            "https://www.youtube.com/embed/$id" else canonical
+                    )
+                    tryResponse(spec.name, result.getOrThrow(), mediaHeaders)
                         ?.let { return@runCatching it }
                 }
                 throw IOException(
@@ -492,13 +506,16 @@ object YouTubeNativeExtractor {
      * Check the exact signed CDN stream with a small range GET.
      * Parsing titles and qualities must never be confused with downloading bytes.
      */
-    private fun verifyMediaRange(url: String, proxy: String): Result<Unit> = runCatching {
+    private fun verifyMediaRange(
+        url: String, proxy: String,
+        headers: Map<String, String> = emptyMap()
+    ): Result<Unit> = runCatching {
         val uri = URI(url)
         if (uri.scheme != "https" || uri.host.isNullOrBlank())
             throw IOException("YouTube 媒体流地址无效")
         val req = Request.Builder().url(url)
-            .header("User-Agent", UA)
-            .header("Referer", "https://www.youtube.com/")
+            .header("User-Agent", headers["User-Agent"] ?: UA)
+            .header("Referer", headers["Referer"] ?: "https://www.youtube.com/")
             .header("Range", "bytes=0-1023")
             .header("Accept-Encoding", "identity")
             .build()
@@ -571,11 +588,9 @@ object YouTubeNativeExtractor {
                     IOException("YouTube 没有提供可下载的所选媒体流")
                 )
         }
-        val headers = mapOf(
-            "Referer" to "https://www.youtube.com/",
-            "User-Agent" to UA
-        )
-        var checked = verifyMediaRange(selected!!.formatId, proxy)
+        var headers = (metadata?.mediaHeaders ?: task.directMediaHeaders)
+            .ifEmpty { mapOf("Referer" to "https://www.youtube.com/", "User-Agent" to UA) }
+        var checked = verifyMediaRange(selected!!.formatId, proxy, headers)
         if (checked.isFailure && cached) {
             // Cached CDN URLs have short lifetimes. Re-extract the *same*
             // video and resolution once, then revalidate before aria2.
@@ -588,7 +603,8 @@ object YouTubeNativeExtractor {
             }
             selected = chooseFrom(metadata!!)
                 ?: return@withContext Result.failure(IOException("重新解析后所选视频流不可用"))
-            checked = verifyMediaRange(selected!!.formatId, proxy)
+            headers = metadata!!.mediaHeaders.ifEmpty { headers }
+            checked = verifyMediaRange(selected!!.formatId, proxy, headers)
         }
         if (checked.isFailure)
             return@withContext Result.failure(checked.exceptionOrNull()!!)
@@ -605,7 +621,7 @@ object YouTubeNativeExtractor {
             }
             if (audioUrl.isBlank())
                 return@withContext Result.failure(IOException("高画质 DASH 缺少可用 AAC 音轨"))
-            var checkedAudio = verifyMediaRange(audioUrl, proxy)
+            var checkedAudio = verifyMediaRange(audioUrl, proxy, headers)
             if (checkedAudio.isFailure && metadata == null) {
                 metadata = extract(task.url, proxy).getOrElse {
                     return@withContext Result.failure(it)
@@ -613,7 +629,8 @@ object YouTubeNativeExtractor {
                 audioUrl = metadata!!.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
                 if (audioUrl.isBlank())
                     return@withContext Result.failure(IOException("重新解析后 AAC 音轨不可用"))
-                checkedAudio = verifyMediaRange(audioUrl, proxy)
+                headers = metadata!!.mediaHeaders.ifEmpty { headers }
+                checkedAudio = verifyMediaRange(audioUrl, proxy, headers)
             }
             if (checkedAudio.isFailure)
                 return@withContext Result.failure(checkedAudio.exceptionOrNull()!!)

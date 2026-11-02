@@ -83,4 +83,34 @@ class DomesticMediaSourceTest {
         assertEquals("youtube-native", restored.parserId)
     }
 
+    @Test fun youtubePlayerRequestHeadersSurviveTaskPersistence() {
+        val headers = mapOf(
+            "User-Agent" to "com.google.ios.youtube/21.26.4 (iPhone16,2)",
+            "Referer" to "https://www.youtube.com/watch?v=gjUzH4UcSkw"
+        )
+        val metadata = VideoMetadata(
+            url = "https://www.youtube.com/watch?v=gjUzH4UcSkw",
+            title = "Test YouTube",
+            siteName = "YouTube",
+            parserId = "youtube-native",
+            mediaHeaders = headers
+        )
+        val restoredMeta = Json.decodeFromString<VideoMetadata>(
+            Json.encodeToString(metadata)
+        )
+        assertEquals(headers, restoredMeta.mediaHeaders)
+        val task = DownloadTask(
+            id = "yt-headers",
+            url = metadata.url,
+            title = metadata.title,
+            downloadType = DownloadType.VIDEO_WITH_AUDIO,
+            parserId = metadata.parserId,
+            directMediaHeaders = metadata.mediaHeaders
+        )
+        val restoredTask = Json.decodeFromString<DownloadTask>(
+            Json.encodeToString(task)
+        )
+        assertEquals(headers, restoredTask.directMediaHeaders)
+    }
+
 }

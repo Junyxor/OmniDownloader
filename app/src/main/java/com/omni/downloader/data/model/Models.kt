@@ -70,7 +70,9 @@ data class VideoMetadata(
     val availableAudioFormats: List<FormatOption> = emptyList(),
     val multiMediaList: List<VideoMetadata> = emptyList(), // 包含推文中的全部独立视频
     val parserId: String = "", // "lux", "douyin" or native default; prevent wrong decoder on download
-    val imageAssets: List<GalleryImage> = emptyList()
+    val imageAssets: List<GalleryImage> = emptyList(),
+    // Headers from the same official player client that produced these streams.
+    val mediaHeaders: Map<String, String> = emptyMap()
 )
 
 /**
