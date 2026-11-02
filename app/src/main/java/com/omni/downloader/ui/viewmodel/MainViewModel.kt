@@ -287,8 +287,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             downloadType = type,
             selectedResolution = resolutionLabel,
             audioFormat = audioFormat,
-            directMediaUrl = DomesticMediaSource.url(currentMeta, format),
-            directMediaHeaders = DomesticMediaSource.headers(currentMeta.siteName),
+            directMediaUrl = currentMeta.imageAssets.firstOrNull()?.url
+                ?: DomesticMediaSource.url(currentMeta, format),
+            directMediaHeaders = if (currentMeta.parserId == "douyin" && currentMeta.imageAssets.isNotEmpty())
+                mapOf("Referer" to "https://www.douyin.com/")
+                else DomesticMediaSource.headers(currentMeta.siteName),
+            directMediaAlternates = currentMeta.imageAssets.firstOrNull()?.mirrors.orEmpty(),
             parserId = currentMeta.parserId
         )
 
@@ -438,8 +442,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 collectionTitle = if (isCollection) collectionTitle else null,
                 episodeIndex = if (isCollection) index + 1 else 0,
                 episodeTotal = if (isCollection) totalEpisodes else 0,
-                directMediaUrl = DomesticMediaSource.url(sub, format),
-                directMediaHeaders = DomesticMediaSource.headers(sub.siteName),
+                directMediaUrl = sub.imageAssets.firstOrNull()?.url
+                    ?: DomesticMediaSource.url(sub, format),
+                directMediaHeaders = if (sub.parserId == "douyin" && sub.imageAssets.isNotEmpty())
+                    mapOf("Referer" to "https://www.douyin.com/")
+                    else DomesticMediaSource.headers(sub.siteName),
+                directMediaAlternates = sub.imageAssets.firstOrNull()?.mirrors.orEmpty(),
                 parserId = sub.parserId
             )
             tasksToAdd.add(task)
