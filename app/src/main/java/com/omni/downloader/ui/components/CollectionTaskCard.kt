@@ -53,6 +53,8 @@ fun CollectionTaskCard(
     collectionTitle: String,
     tasks: List<DownloadTask>,
     onCancelCollection: (colId: String) -> Unit,
+    onPauseCollection: (colId: String) -> Unit,
+    onResumeCollection: (colId: String) -> Unit,
     onDeleteCollection: (colId: String, deleteFile: Boolean) -> Unit,
     onRetryCollection: (colId: String) -> Unit,
     onRetryEpisode: (taskId: String) -> Unit,
@@ -67,9 +69,11 @@ fun CollectionTaskCard(
     val completedCount = tasks.count { it.status == TaskStatus.COMPLETED }
     val failedCount = tasks.count { it.status == TaskStatus.FAILED }
     val activeTask = tasks.find { it.status == TaskStatus.DOWNLOADING || it.status == TaskStatus.PROCESSING }
+        ?: tasks.find { it.status == TaskStatus.PAUSED }
     val isAllCompleted = completedCount == totalCount && totalCount > 0
     val isDownloading = tasks.any { it.status == TaskStatus.DOWNLOADING || it.status == TaskStatus.PROCESSING }
     val isPending = tasks.any { it.status == TaskStatus.PENDING } && !isDownloading
+    val isPaused = tasks.any { it.status == TaskStatus.PAUSED }
     val hasFailed = tasks.any { it.status == TaskStatus.FAILED || it.status == TaskStatus.CANCELLED }
 
     val coverUrl = remember(tasks) {
@@ -184,6 +188,7 @@ fun CollectionTaskCard(
                         val statusColor = when {
                             isAllCompleted -> statusColors.success
                             isDownloading -> MaterialTheme.colorScheme.primary
+                            isPaused -> statusColors.warning
                             hasFailed -> statusColors.error
                             else -> statusColors.warning
                         }
@@ -191,6 +196,7 @@ fun CollectionTaskCard(
                         val statusText = when {
                             isAllCompleted -> strings.statusCompleted
                             isDownloading -> "${strings.statusDownloading} (${(completedCount + 1).coerceAtMost(totalCount)}/$totalCount)"
+                            isPaused && !isDownloading -> strings.statusPaused
                             isPending -> strings.statusPending
                             hasFailed -> if (failedCount > 0) "失败 $failedCount 集" else strings.statusCancelled
                             else -> strings.statusPending
@@ -318,6 +324,19 @@ fun CollectionTaskCard(
                                         )
                                     }
                                 }
+                                TaskStatus.PAUSED -> {
+                                    IconButton(
+                                        onClick = { onRetryEpisode(subTask.id) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.PlayArrow,
+                                            contentDescription = strings.resume,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
                                 TaskStatus.PENDING -> {
                                     Text(
                                         text = strings.statusPending,
@@ -349,6 +368,29 @@ fun CollectionTaskCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (isDownloading || isPending) {
+                    CollectionActionBtn(
+                        icon = Icons.Outlined.Pause,
+                        text = strings.pause,
+                        isPrimary = false,
+                        onClick = { onPauseCollection(collectionId) }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    CollectionActionBtn(
+                        icon = Icons.Outlined.Close,
+                        text = strings.collectionCancelAll,
+                        isPrimary = false,
+                        onClick = { showCancelDialog = true }
+                    )
+                }
+
+                if (isPaused && !isDownloading) {
+                    CollectionActionBtn(
+                        icon = Icons.Outlined.PlayArrow,
+                        text = strings.resume,
+                        isPrimary = true,
+                        onClick = { onResumeCollection(collectionId) }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                     CollectionActionBtn(
                         icon = Icons.Outlined.Close,
                         text = strings.collectionCancelAll,

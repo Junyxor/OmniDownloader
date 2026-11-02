@@ -70,7 +70,7 @@ class TaskRepositoryTest {
         val repo = TaskRepository(file, backgroundScope)
         assertTrue(repo.tasks.value.isEmpty())
         repo.awaitLoaded()
-        assertEquals(TaskStatus.CANCELLED, repo.getTask("old")!!.status)
+        assertEquals(TaskStatus.PAUSED, repo.getTask("old")!!.status)
     }
 
     @Test fun serializedWriterPersistsNewestStateAndNoTemporaryFileRemains() = runTest {

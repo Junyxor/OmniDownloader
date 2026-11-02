@@ -15,6 +15,7 @@ import okhttp3.HttpUrl
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.net.URLDecoder
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -87,215 +88,80 @@ object DomesticDirectExtractor {
      * 抖音无水印直接解析
      */
     private fun extractDouyin(rawUrl: String): Result<VideoMetadata> {
-        val resolvedUrl = followRedirects(rawUrl, MOBILE_UA)
-        Log.d(TAG, "抖音重定向目标: $resolvedUrl")
-
-        // 提取视频 ID：兼容 video/xxx, note/xxx, item_ids=xxx, 以及纯数字
-        val idMatcher = Pattern.compile("""(?:video|note|item_ids=)/?(\d+)""").matcher(resolvedUrl)
-        val videoId = if (idMatcher.find()) {
-            idMatcher.group(1) ?: ""
-        } else {
-            val fallbackMatcher = Pattern.compile("""(\d{18,20})""").matcher(resolvedUrl)
-            if (fallbackMatcher.find()) fallbackMatcher.group(1) ?: "" else ""
+        val redirected = followRedirects(rawUrl, MOBILE_UA)
+        val id = douyinIdFromUrl(redirected).ifBlank { douyinIdFromUrl(rawUrl) }
+        if (id.isBlank()) {
+            return Result.failure(IllegalArgumentException(
+                "抖音短链接未返回有效作品 ID，请检查网络后重试，不会用其它推荐作品替代"
+            ))
         }
+        val isImagePost = listOf("/note/", "/slide/", "/slides/").any {
+            it in redirected || it in rawUrl
+        }
+        val shareUrl = if (isImagePost) "https://www.iesdouyin.com/share/slides/$id"
+            else "https://www.iesdouyin.com/share/video/$id"
 
-        if (videoId.isNotEmpty()) {
-            // 1. 优先调用字节原生极速 Feed API (免登录、免 cookie、毫秒级下发无水印原画直链)
-            val apiResult = requestDouyinFeedApi(videoId, resolvedUrl)
-            if (apiResult != null) {
-                return Result.success(apiResult)
+        // Desktop www.douyin.com/video/{id} is frequently a CSR shell.
+        // Mobile share pages still expose item-specific SSR JSON.
+        val pages = listOf(shareUrl, redirected).distinct()
+        for (page in pages) {
+            val html = fetchHtml(page, MOBILE_UA)
+            if (html.isNotBlank()) {
+                val data = DouyinStructuredParser.parseHtml(html, id, shareUrl)
+                if (data != null) {
+                    cacheDouyin(data)
+                    return Result.success(data)
+                }
             }
         }
 
-        // 2. 备用：尝试抓取页面内嵌 SSR 数据
-        val html = fetchHtml(resolvedUrl, MOBILE_UA)
-        if (html.isNotEmpty()) {
-            val parseResult = parseDouyinHtml(html, resolvedUrl, videoId)
-            if (parseResult != null) {
-                directStreamCache[parseResult.url] = DirectStreamInfo(
-                    videoUrl = parseResult.availableVideoFormats.firstOrNull()?.formatId ?: "",
-                    headers = mapOf("User-Agent" to MOBILE_UA, "Referer" to "https://www.douyin.com/")
-                )
-                return Result.success(parseResult)
-            }
-        }
-
-        return Result.failure(Exception("未能从抖音提取到无水印视频流，将尝试通用引擎"))
-    }
-
-    private fun requestDouyinFeedApi(videoId: String, pageUrl: String): VideoMetadata? {
-        val apiUrl = "https://api.amemv.com/aweme/v1/feed/?aweme_id=$videoId"
-        try {
-            val req = Request.Builder()
-                .url(apiUrl)
-                .header("User-Agent", MOBILE_UA)
+        // Public mobile feeds can differ by CDN / device; require exact ID match.
+        val ua = "com.ss.android.ugc.aweme/290101 (Linux; U; Android 10; zh_CN; Pixel 4; Build/QQ3A.200805.001)"
+        val endpoints = listOf(
+            "https://api5-normal-c-hl.amemv.com/aweme/v1/feed/",
+            "https://aweme.snssdk.com/aweme/v1/feed/",
+            "https://api.amemv.com/aweme/v1/feed/"
+        )
+        for (endpoint in endpoints) {
+            val req = Request.Builder().url(endpoint + "?aweme_id=$id")
+                .header("User-Agent", ua)
+                .header("Referer", shareUrl)
                 .build()
-            val body = httpClient.newCall(req).execute().use { response ->
-                if (!response.isSuccessful) return null
-                response.body?.string()
-            } ?: return null
-            val json = JSONObject(body)
-            val awemeList = json.optJSONArray("aweme_list") ?: return null
-
-            // 查找与 videoId 匹配的 item，若未找到则取首个
-            var matchedItem: JSONObject? = null
-            for (i in 0 until awemeList.length()) {
-                val item = awemeList.optJSONObject(i) ?: continue
-                if (item.optString("aweme_id") == videoId) {
-                    matchedItem = item
-                    break
+            val responseText = runCatching {
+                httpClient.newCall(req).execute().use { response ->
+                    if (response.isSuccessful) response.body?.string().orEmpty() else ""
+                }
+            }.getOrDefault("")
+            if (responseText.isNotBlank()) {
+                val data = DouyinStructuredParser.parse(responseText, id, shareUrl)
+                if (data != null) {
+                    cacheDouyin(data)
+                    return Result.success(data)
                 }
             }
-            if (matchedItem == null && awemeList.length() > 0) {
-                matchedItem = awemeList.optJSONObject(0)
-            }
-            if (matchedItem == null) return null
-
-            val title = matchedItem.optString("desc", "抖音视频_$videoId").trim()
-            val author = matchedItem.optJSONObject("author")?.optString("nickname", "抖音创作者") ?: "抖音创作者"
-            val duration = matchedItem.optInt("duration", 0) / 1000
-
-            val videoObj = matchedItem.optJSONObject("video")
-            val cover = videoObj?.optJSONObject("cover")?.optJSONArray("url_list")?.optString(0, "") ?: ""
-
-            // 提取播放直链 (play_addr -> url_list)
-            val playObj = videoObj?.optJSONObject("play_addr")
-            val urlList = playObj?.optJSONArray("url_list")
-            var videoDirectUrl = ""
-            if (urlList != null && urlList.length() > 0) {
-                for (i in 0 until urlList.length()) {
-                    val candidate = urlList.optString(i, "")
-                    if (candidate.isNotEmpty()) {
-                        videoDirectUrl = candidate
-                        break
-                    }
-                }
-            }
-
-            // 若在 play_addr 中未找到，遍历 bit_rate
-            if (videoDirectUrl.isEmpty()) {
-                val bitRates = videoObj?.optJSONArray("bit_rate")
-                if (bitRates != null && bitRates.length() > 0) {
-                    for (i in 0 until bitRates.length()) {
-                        val br = bitRates.optJSONObject(i) ?: continue
-                        val brUrls = br.optJSONObject("play_addr")?.optJSONArray("url_list")
-                        if (brUrls != null && brUrls.length() > 0) {
-                            videoDirectUrl = brUrls.optString(0, "")
-                            if (videoDirectUrl.isNotEmpty()) break
-                        }
-                    }
-                }
-            }
-
-            // 无水印替换 (playwm -> play)
-            val cleanVideoUrl = videoDirectUrl.replace("playwm", "play")
-
-            // 提取独立原声音频 (music -> play_url)
-            val musicObj = matchedItem.optJSONObject("music")
-            val musicUrl = musicObj?.optJSONObject("play_url")?.optJSONArray("url_list")?.optString(0, "") ?: ""
-
-            val audioOptions = mutableListOf<FormatOption>()
-            if (musicUrl.isNotEmpty()) {
-                audioOptions.add(
-                    FormatOption(
-                        formatId = musicUrl,
-                        resolutionLabel = "独立原声音频 (MP3)",
-                        ext = "mp3",
-                        isAudioOnly = true,
-                        note = "高品质原声"
-                    )
-                )
-            }
-
-            if (cleanVideoUrl.isNotEmpty()) {
-                val metadata = VideoMetadata(
-                    url = pageUrl,
-                    title = if (title.isNotBlank()) title else "抖音视频_$videoId",
-                    author = author,
-                    durationText = if (duration > 0) "${duration}秒" else "",
-                    thumbnailUrl = cover,
-                    siteName = "抖音",
-                    availableVideoFormats = listOf(
-                        FormatOption(
-                            formatId = cleanVideoUrl,
-                            resolutionLabel = "原画 (无水印)",
-                            ext = "mp4",
-                            note = "极速直连原画"
-                        )
-                    ),
-                    availableAudioFormats = audioOptions
-                )
-                directStreamCache[pageUrl] = DirectStreamInfo(
-                    videoUrl = cleanVideoUrl,
-                    headers = mapOf("User-Agent" to MOBILE_UA, "Referer" to "https://www.douyin.com/")
-                )
-                directStreamCache["https://www.douyin.com/video/$videoId"] = DirectStreamInfo(
-                    videoUrl = cleanVideoUrl,
-                    headers = mapOf("User-Agent" to MOBILE_UA, "Referer" to "https://www.douyin.com/")
-                )
-                return metadata
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "requestDouyinFeedApi 异常: ${e.message}", e)
         }
-        return null
+        return Result.failure(IOException(
+            "抖音作品 $id 已识别，但移动端 SSR 与 Feed 均未提供匹配的视频或图文信息；可能需要登录或接口临时限制"
+        ))
     }
 
-    private fun parseDouyinHtml(html: String, pageUrl: String, videoId: String): VideoMetadata? {
-        var videoUrl = ""
-        var title = "抖音短视频"
-        var author = "抖音用户"
-        var coverUrl = ""
+    private fun cacheDouyin(meta: VideoMetadata) {
+        val direct = meta.availableVideoFormats.firstOrNull()?.formatId.orEmpty()
+        if (direct.startsWith("http")) directStreamCache[meta.url] = DirectStreamInfo(
+            videoUrl = direct,
+            headers = mapOf("User-Agent" to MOBILE_UA, "Referer" to "https://www.douyin.com/")
+        )
+    }
 
-        val routerMatcher = Pattern.compile("""window\._ROUTER_DATA\s*=\s*(\{.*?\});\s*</script>""").matcher(html)
-        if (routerMatcher.find()) {
-            val jsonStr = routerMatcher.group(1).orEmpty()
-            try {
-                val playMatcher = Pattern.compile(""""play_addr"\s*:\s*\{[^}]*?"url_list"\s*:\s*\[\s*"([^"]+)"""").matcher(jsonStr)
-                if (playMatcher.find()) {
-                    videoUrl = playMatcher.group(1)?.replace("""\/""", "/") ?: ""
-                }
-                val titleMatcher = Pattern.compile(""""desc"\s*:\s*"([^"]*)"""").matcher(jsonStr)
-                if (titleMatcher.find()) {
-                    title = titleMatcher.group(1)?.trim() ?: title
-                }
-                val authorMatcher = Pattern.compile(""""nickname"\s*:\s*"([^"]*)"""").matcher(jsonStr)
-                if (authorMatcher.find()) {
-                    author = authorMatcher.group(1)?.trim() ?: author
-                }
-                val coverMatcher = Pattern.compile(""""cover"\s*:\s*\{[^}]*?"url_list"\s*:\s*\[\s*"([^"]+)"""").matcher(jsonStr)
-                if (coverMatcher.find()) {
-                    coverUrl = coverMatcher.group(1)?.replace("""\/""", "/") ?: ""
-                }
-            } catch (ignored: Exception) {}
-        }
-
-        if (videoUrl.isEmpty()) {
-            val directMatcher = Pattern.compile("""https?://[a-zA-Z0-9_\-.]+(?:douyinvod|snssdk)\.com/[^\s"']+""").matcher(html)
-            if (directMatcher.find()) {
-                videoUrl = directMatcher.group(0) ?: ""
-            }
-        }
-
-        if (videoUrl.isNotEmpty()) {
-            val cleanVideoUrl = videoUrl.replace("playwm", "play")
-            return VideoMetadata(
-                url = pageUrl,
-                title = if (title.isNotBlank()) title else "抖音视频_$videoId",
-                author = author,
-                thumbnailUrl = coverUrl,
-                siteName = "抖音",
-                availableVideoFormats = listOf(
-                    FormatOption(
-                        formatId = cleanVideoUrl,
-                        resolutionLabel = "原画 (无水印)",
-                        ext = "mp4",
-                        note = "极速直连原画"
-                    )
-                )
-            )
-        }
-        return null
+    /** Only work IDs in explicit Douyin routes or query parameters can be used. */
+    internal fun douyinIdFromUrl(url: String): String {
+        val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return ""
+        val path = uri.path.orEmpty()
+        val id = Regex("""/(?:share/)?(?:video|note|slide|slides|aweme)/(\d{17,22})(?:/|$)""")
+            .find(path)?.groupValues?.get(1)
+        if (!id.isNullOrBlank()) return id
+        return Regex("""(?:^|&)(?:aweme_id|item_ids|item_id)=(\d{17,22})(?:&|$)""")
+            .find(uri.rawQuery.orEmpty())?.groupValues?.get(1).orEmpty()
     }
 
     /**
@@ -493,6 +359,23 @@ object DomesticDirectExtractor {
         onProgressUpdate: (progress: Float, speed: String, eta: String, status: TaskStatus) -> Unit,
         proxyUrl: String = ""
     ): Result<String> = withContext(Dispatchers.IO) {
+        // Image posts are collections: re-parse the source to refresh expiring image URLs
+        // rather than treating each image as a video MP4.
+        val selectedImage = Regex("""(?:^|[?&])omni_douyin_image=(\d+)""")
+            .find(task.url.substringAfter('#', ""))?.groupValues?.get(1)?.toIntOrNull()
+        if (selectedImage != null) {
+            val original = task.url.substringBefore('#')
+            val info = extractDouyin(original).getOrElse {
+                return@withContext Result.failure(it)
+            }
+            val img = info.multiMediaList.getOrNull(selectedImage)?.thumbnailUrl.orEmpty()
+            if (!img.startsWith("http")) {
+                return@withContext Result.failure(IOException("图文图片地址失效，请重新解析"))
+            }
+            return@withContext DownloadEngine.downloadCoverFile(
+                context, img, task.title, proxyUrl, publicDir, onProgressUpdate
+            )
+        }
         val cleanUrl = UrlSniffer.sanitizeAndResolveUrl(task.url)
         val site = UrlSniffer.identifySite(cleanUrl)
         val cached = directStreamCache[cleanUrl] ?: directStreamCache[task.url]

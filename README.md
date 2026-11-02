@@ -10,7 +10,7 @@
 </p>
 
 [![Release](https://img.shields.io/github/v/release/baishu136/OmniDownloader?color=blue&label=Release)](https://github.com/baishu136/OmniDownloader/releases)
-[![Android](https://img.shields.io/badge/Android-v1.5.10-green.svg)](https://developer.android.com)
+[![Android](https://img.shields.io/badge/Android-v1.6.3--native--beta2-blue.svg)](https://developer.android.com)
 [![iOS](https://img.shields.io/badge/iOS-SwiftUI%20Native-orange.svg)](OmniDownloader-iOS)
 [![Windows](https://img.shields.io/badge/Windows-Desktop%20%26%20Web-blue.svg)](windows)
 [![License](https://img.shields.io/badge/License-MIT-orange.svg)](LICENSE)
@@ -19,13 +19,16 @@
 
 </div>
 
+> **Android v1.6.3 Native Beta 2 (this branch only):** Native aria2 + MIT-licensed **Lux Go extractor** for YouTube, Instagram, Facebook, Pinterest, Douyin and other sites; public X posts can use the third-party [FxEmbed API](https://docs.fxembed.com/api/introduction/) (sends the public post ID) with local Lux fallback. Also includes selected public Miyoushe videos, Douyin photo galleries and conservative HTML5 discovery. **Beta compatibility is not a guarantee that every URL works**, especially with login restrictions, anti-bot changes or DRM. Mandatory Python/FFmpeg packages are removed; HLS and various transcoding formats remain out of scope. Other platforms and historical versions may differ.
+
+
 ---
 
 ## 🌟 Cross-Platform Overview
 
 | Platform | Target Devices | Core Tech Stack | Installation & Download |
 | :--- | :--- | :--- | :--- |
-| **🤖 Android Native** | Android Phones / Tablets / TV (Android 8.0+) | Kotlin + Jetpack Compose + yt-dlp + FFmpeg | [Download Latest APK (v1.5.10)](https://github.com/baishu136/OmniDownloader/releases/latest/download/OmniDownloader_LATEST.apk) or via Releases |
+| **🤖 Android Native** | Android Phones / Tablets / TV (Android 8.0+) | Kotlin + Compose + aria2 + Lux (Go/MIT) + OkHttp + Android MediaMuxer | [Branch test APK (Actions)](https://github.com/Junyxor/OmniDownloader/actions/workflows/aria2-native-apk.yml) |
 | **🍎 iOS Native** | iPhone / iPad (iOS 15.0+) | Swift 5.9 + SwiftUI + AVFoundation hardware-accelerated muxing | Source code in [`OmniDownloader-iOS`](OmniDownloader-iOS); Free cloud build via GitHub Actions for TrollStore / AltStore sideloading |
 | **💻 Windows Desktop** | Windows 10 / 11 (64-bit) | Python 3 + FastAPI + Edge WebView2 standalone window + Built-in FFmpeg | Download [`windows/release/OmniDownloader_桌面独立版.zip`](windows/release/); Standalone portable app with multilingual guides |
 | **🌐 Web Background** | Windows PC, accessible by any browser across LAN | Lightweight system tray daemon + Local web service + Built-in FFmpeg | Download [`windows/release/OmniDownloader_网页纯后台版.zip`](windows/release/); Silent tray app with browser download takeover |
@@ -36,10 +39,10 @@
 
 1. **Native Platform Support**:
    - **Bilibili**: Full DASH stream muxing up to 4K / 1080P60, playlist batch downloading, SESSDATA authentication.
-   - **Short Video No-Watermark Extraction**: Direct official CDN streams from Douyin, Kuaishou, Xiaohongshu, and TikTok.
-   - **Global Platforms**: Full coverage of YouTube (4K/Shorts), X (Twitter), Instagram, and Facebook.
+   - **Short Video Extraction**: Native handlers for Douyin, Kuaishou, Xiaohongshu and TikTok; availability can change with platform restrictions. Also supports selected public Miyoushe article VOD and miHoYo Wiki pages.
+   - **Overseas Platforms**: Bundled Lux native extractors provide YouTube, Instagram, Facebook, Pinterest and other public media, with limitations on restricted content. Public X posts can also use the FxEmbed API; generic HTML5/OpenGraph/JSON-LD discovery remains as a last resort.
 2. **Flexible Export Modes**:
-   - Video + Audio (MP4), Video Only (Mute for remixing), High-fidelity Audio extraction (MP3 / M4A / FLAC), Animated GIF, and HD Cover art.
+   - Android native beta: MP4 remux, compatible M4A audio extraction and HD cover art; MP3/FLAC/OPUS transcoding and GIF conversion are not bundled.
 3. **Smart Collection Aggregation**:
    - Playlists and multi-video collections display with a weighted progress bar and expandable episode drawers.
 4. **Multilingual Support**:

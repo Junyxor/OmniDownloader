@@ -48,7 +48,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val activeTasks: StateFlow<List<DownloadTask>> = repository.taskStructure
         .map { list ->
             list.filter {
-                it.status == TaskStatus.DOWNLOADING || it.status == TaskStatus.PROCESSING || it.status == TaskStatus.PENDING
+                it.status == TaskStatus.DOWNLOADING || it.status == TaskStatus.PROCESSING || it.status == TaskStatus.PENDING || it.status == TaskStatus.PAUSED
             }
         }
         .flowOn(Dispatchers.Default)
@@ -117,7 +117,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedVideoFormat = MutableStateFlow<FormatOption?>(null)
     val selectedVideoFormat: StateFlow<FormatOption?> = _selectedVideoFormat.asStateFlow()
 
-    private val _selectedAudioFormat = MutableStateFlow(AudioFormat.MP3)
+    private val _selectedAudioFormat = MutableStateFlow(AudioFormat.M4A)
     val selectedAudioFormat: StateFlow<AudioFormat> = _selectedAudioFormat.asStateFlow()
 
     private val _isUpdatingEngine = MutableStateFlow(false)
@@ -160,11 +160,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _selectedMultiMediaIndex.value = index
         val sub = meta.multiMediaList[index]
         _selectedVideoFormat.value = sub.availableVideoFormats.firstOrNull()
-        if (sub.isGif) {
-            _selectedDownloadType.value = DownloadType.GIF
-        } else {
-            _selectedDownloadType.value = DownloadType.VIDEO_WITH_AUDIO
-        }
+        _selectedDownloadType.value = DownloadType.VIDEO_WITH_AUDIO
     }
 
     fun selectDownloadType(type: DownloadType) {
@@ -239,13 +235,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _selectedVideoFormat.value = activeMeta.availableVideoFormats.firstOrNull()
                 // 默认下载类型始终锁定为原画视频 (VIDEO_WITH_AUDIO)，
                 // 彻底杜绝普通视频或短动效在粘贴自动下载时被私自执行 GIF 转码
-                _selectedDownloadType.value = DownloadType.VIDEO_WITH_AUDIO
-                _selectedAudioFormat.value = AudioFormat.MP3
+                _selectedDownloadType.value = if (data.siteName == "图文") DownloadType.COVER
+                    else DownloadType.VIDEO_WITH_AUDIO
+                _selectedAudioFormat.value = AudioFormat.M4A
 
                 if (autoDownload && context != null) {
                     if (data.multiMediaList.size > 1) {
                         // 发现链接是合集/多视频时，不直接下载，而是先弹出下载选项由用户自己决定如何下载
-                        _message.value = "检测到合集内容(共${data.multiMediaList.size}个视频)，请选择下载选项"
+                        _message.value = "检测到多媒体作品(共${data.multiMediaList.size}项)，请选择下载选项"
                         _showFormatSheet.value = true
                     } else {
                         startDownload(context)
@@ -270,7 +267,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             meta.multiMediaList.getOrElse(_selectedMultiMediaIndex.value) { meta }
         } else meta
 
-        val type = _selectedDownloadType.value
+        val type = if (currentMeta.siteName == "图文") DownloadType.COVER
+            else _selectedDownloadType.value
         val format = _selectedVideoFormat.value
         val audioFormat = _selectedAudioFormat.value
         val resolutionLabel = when (type) {
@@ -290,7 +288,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             selectedResolution = resolutionLabel,
             audioFormat = audioFormat,
             directMediaUrl = DomesticMediaSource.url(currentMeta, format),
-            directMediaHeaders = DomesticMediaSource.headers(currentMeta.siteName)
+            directMediaHeaders = DomesticMediaSource.headers(currentMeta.siteName),
+            parserId = currentMeta.parserId
         )
 
         repository.addTask(task)
@@ -305,7 +304,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 thumbnailUrl = currentMeta.thumbnailUrl,
                 downloadType = DownloadType.COVER,
                 selectedResolution = "原图封面",
-                audioFormat = AudioFormat.MP3
+                audioFormat = AudioFormat.M4A
             )
             repository.addTask(coverTask)
             DownloadService.startDownload(context, coverTask.id)
@@ -341,7 +340,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             thumbnailUrl = thumbnailUrl,
             downloadType = DownloadType.VIDEO_WITH_AUDIO,
             selectedResolution = "中转直链",
-            audioFormat = AudioFormat.MP3
+            audioFormat = AudioFormat.M4A
         )
         repository.addTask(task)
         DownloadService.startDownload(context, task.id)
@@ -370,7 +369,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             thumbnailUrl = currentMeta.thumbnailUrl,
             downloadType = DownloadType.COVER,
             selectedResolution = "原图封面",
-            audioFormat = AudioFormat.MP3
+            audioFormat = AudioFormat.M4A
         )
 
         repository.addTask(task)
@@ -403,7 +402,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        val type = _selectedDownloadType.value
+        val type = if (meta.siteName == "图文") DownloadType.COVER else _selectedDownloadType.value
         val format = _selectedVideoFormat.value
         val audioFormat = _selectedAudioFormat.value
 
@@ -422,13 +421,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val tasksToAdd = mutableListOf<DownloadTask>()
 
         targetList.forEachIndexed { index, sub ->
-            val finalType = if (type == DownloadType.COVER) {
+            val finalType = if (sub.siteName == "图文" || type == DownloadType.COVER) {
                 DownloadType.COVER
-            } else if (sub.isGif) {
-                DownloadType.GIF
-            } else {
-                type
-            }
+            } else type
 
             val task = DownloadTask(
                 id = UUID.randomUUID().toString().replace("-", "").take(12),
@@ -444,7 +439,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 episodeIndex = if (isCollection) index + 1 else 0,
                 episodeTotal = if (isCollection) totalEpisodes else 0,
                 directMediaUrl = DomesticMediaSource.url(sub, format),
-                directMediaHeaders = DomesticMediaSource.headers(sub.siteName)
+                directMediaHeaders = DomesticMediaSource.headers(sub.siteName),
+                parserId = sub.parserId
             )
             tasksToAdd.add(task)
 
@@ -457,7 +453,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     thumbnailUrl = sub.thumbnailUrl,
                     downloadType = DownloadType.COVER,
                     selectedResolution = "原图封面",
-                    audioFormat = AudioFormat.MP3
+                    audioFormat = AudioFormat.M4A
                 )
                 tasksToAdd.add(coverTask)
             }
@@ -484,6 +480,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         startDownloadSelectedMultiMedia(context, meta.multiMediaList.indices.toSet())
     }
 
+    fun pauseTask(context: Context, taskId: String) {
+        DownloadService.pauseDownload(context, taskId)
+        _message.value = "已暂停，下载进度与文件分段已保留"
+    }
+
+    fun resumeTask(context: Context, taskId: String) {
+        DownloadService.resumeDownload(context, taskId)
+        _message.value = "正在继续下载"
+    }
+
+    fun pauseCollection(context: Context, collectionId: String) {
+        repository.tasks.value.filter { it.collectionId == collectionId }
+            .filter { it.status == TaskStatus.PENDING || it.status == TaskStatus.DOWNLOADING }
+            .forEach { DownloadService.pauseDownload(context, it.id) }
+        _message.value = "已暂停合集任务"
+    }
+
+    fun resumeCollection(context: Context, collectionId: String) {
+        repository.tasks.value.filter { it.collectionId == collectionId && it.status == TaskStatus.PAUSED }
+            .forEach { DownloadService.resumeDownload(context, it.id) }
+        _message.value = "已继续合集任务"
+    }
+
     fun cancelTask(context: Context, taskId: String) {
         DownloadService.cancelDownload(context, taskId)
         _message.value = "任务已取消"
@@ -500,7 +519,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun cancelCollection(context: Context, collectionId: String) {
         val allTasks = repository.tasks.value.filter { it.collectionId == collectionId }
         allTasks.forEach { task ->
-            if (task.status == TaskStatus.DOWNLOADING || task.status == TaskStatus.PROCESSING || task.status == TaskStatus.PENDING) {
+            if (task.status == TaskStatus.DOWNLOADING || task.status == TaskStatus.PROCESSING || task.status == TaskStatus.PENDING || task.status == TaskStatus.PAUSED) {
                 DownloadService.cancelDownload(context, task.id)
             }
         }
@@ -554,6 +573,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 it.status == TaskStatus.DOWNLOADING ||
                 it.status == TaskStatus.PROCESSING ||
                 it.status == TaskStatus.PENDING ||
+                it.status == TaskStatus.PAUSED ||
                 it.status == TaskStatus.FAILED ||
                 it.status == TaskStatus.CANCELLED
             }
@@ -577,7 +597,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             // 3. 清理缓存目录中的 staging 临时目录
             try {
-                val stagingDir = File(context.cacheDir, "staging")
+                val stagingDir = File(context.noBackupFilesDir, "native-staging")
                 if (stagingDir.exists() && stagingDir.isDirectory) {
                     stagingDir.listFiles()?.forEach { file ->
                         try { file.delete() } catch (ignored: Exception) {}
@@ -596,12 +616,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateEngine(context: Context) {
         viewModelScope.launch {
             _isUpdatingEngine.value = true
-            val res = DownloadEngine.updateEngine(context)
+            val res = DownloadEngine.ensureInitialized(context)
             _isUpdatingEngine.value = false
             res.onSuccess { msg ->
-                _message.value = "核心引擎更新成功: $msg"
+                _message.value = "检测完成：原生 aria2 下载引擎已就绪"
             }.onFailure { err ->
-                _errorDialogDetail.value = "更新引擎失败:\n${err.message}"
+                _errorDialogDetail.value = "aria2 引擎检测失败:\n${err.message}"
             }
         }
     }

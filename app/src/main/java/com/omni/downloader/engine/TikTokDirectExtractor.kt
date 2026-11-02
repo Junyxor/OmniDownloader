@@ -170,115 +170,26 @@ object TikTokDirectExtractor {
         task: DownloadTask,
         stagingDir: File,
         publicDir: File,
-        onProgressUpdate: (progress: Float, speed: String, eta: String, status: TaskStatus) -> Unit
+        onProgressUpdate: (Float, String, String, TaskStatus) -> Unit
     ): Result<String> = withContext(Dispatchers.IO) {
         val cleanUrl = UrlSniffer.sanitizeAndResolveUrl(task.url)
-        val streamInfo = directStreamCache[cleanUrl] ?: directStreamCache[task.url]
-
-        val isAudio = task.downloadType == DownloadType.AUDIO_ONLY
-        val targetDownloadUrl = if (isAudio) {
-            if (streamInfo?.audioUrl?.isNotEmpty() == true) {
-                streamInfo.audioUrl
-            } else if (task.selectedResolution.startsWith("http")) {
-                task.selectedResolution
-            } else {
-                streamInfo?.videoUrl ?: ""
-            }
-        } else {
-            if (streamInfo != null && streamInfo.videoUrl.isNotEmpty()) {
-                streamInfo.videoUrl
-            } else if (task.selectedResolution.startsWith("http")) {
-                task.selectedResolution
-            } else {
-                val reExtract = extract(cleanUrl)
-                if (reExtract.isSuccess) {
-                    reExtract.getOrNull()?.availableVideoFormats?.firstOrNull()?.formatId ?: ""
-                } else {
-                    ""
-                }
-            }
+        val cached = directStreamCache[cleanUrl] ?: directStreamCache[task.url]
+        val streamUrl = task.directMediaUrl.ifBlank {
+            cached?.videoUrl?.takeIf { it.startsWith("http") }
+                ?: task.selectedResolution.takeIf { it.startsWith("http") }
+                ?: extract(cleanUrl).getOrElse {
+                    return@withContext Result.failure(it)
+                }.availableVideoFormats.firstOrNull()?.formatId.orEmpty()
         }
-
-        if (targetDownloadUrl.isEmpty() || !targetDownloadUrl.startsWith("http")) {
-            return@withContext Result.failure(Exception("未找到有效的 TikTok 下载地址"))
+        if (!streamUrl.startsWith("http")) {
+            return@withContext Result.failure(IOException("TikTok 没有可下载的媒体源"))
         }
-
-        val cleanTitle = task.title.replace(Regex("""[\\/:*?"<>|]"""), "_").trim()
-        val ext = if (isAudio) "mp3" else "mp4"
-        val tempFile = File(stagingDir, "tiktok_${task.id}.$ext")
-        val finalFile = File(publicDir, "$cleanTitle.$ext")
-
-        try {
-            onProgressUpdate(5f, "", "准备极速下载...", TaskStatus.DOWNLOADING)
-
-            val reqBuilder = Request.Builder().url(targetDownloadUrl)
-            streamInfo?.headers?.forEach { (k, v) ->
-                reqBuilder.header(k, v)
-            }
-            if (streamInfo?.headers?.containsKey("User-Agent") != true) {
-                reqBuilder.header("User-Agent", MOBILE_UA)
-            }
-
-            val response = httpClient.newCall(reqBuilder.build()).execute()
-            if (!response.isSuccessful) {
-                return@withContext Result.failure(IOException("HTTP 请求失败: ${response.code}"))
-            }
-
-            val body = response.body ?: return@withContext Result.failure(IOException("响应体为空"))
-            val totalBytes = body.contentLength()
-            var downloadedBytes = 0L
-
-            var lastReportTime = SystemClock.elapsedRealtime()
-            var bytesSinceLastReport = 0L
-
-            body.byteStream().use { input ->
-                FileOutputStream(tempFile).use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    var read: Int
-                    while (input.read(buffer).also { read = it } != -1) {
-                        output.write(buffer, 0, read)
-                        downloadedBytes += read
-                        bytesSinceLastReport += read
-
-                        val now = SystemClock.elapsedRealtime()
-                        if (now - lastReportTime >= 400) {
-                            val timeDiffSec = (now - lastReportTime) / 1000f
-                            val speedBytesPerSec = if (timeDiffSec > 0) bytesSinceLastReport / timeDiffSec else 0f
-                            val speedStr = formatSpeed(speedBytesPerSec)
-
-                            val progress = if (totalBytes > 0) {
-                                (downloadedBytes.toFloat() / totalBytes * 100f).coerceIn(0f, 99f)
-                            } else 50f
-
-                            val etaStr = if (totalBytes > downloadedBytes && speedBytesPerSec > 0) {
-                                val remainingSec = ((totalBytes - downloadedBytes) / speedBytesPerSec).toLong()
-                                formatEta(remainingSec)
-                            } else ""
-
-                            onProgressUpdate(progress, speedStr, etaStr, TaskStatus.DOWNLOADING)
-                            lastReportTime = now
-                            bytesSinceLastReport = 0L
-                        }
-                    }
-                    output.flush()
-                }
-            }
-
-            onProgressUpdate(99f, "", "正在保存到媒体库...", TaskStatus.PROCESSING)
-            tempFile.copyTo(finalFile, overwrite = true)
-            tempFile.delete()
-
-            try {
-                android.media.MediaScannerConnection.scanFile(context, arrayOf(finalFile.absolutePath), null, null)
-            } catch (ignored: Exception) {}
-
-            onProgressUpdate(100f, "", "", TaskStatus.COMPLETED)
-            Result.success(finalFile.absolutePath)
-        } catch (e: Exception) {
-            tempFile.delete()
-            onProgressUpdate(0f, "", "", TaskStatus.FAILED)
-            Result.failure(e)
-        }
+        val headers = mapOf("User-Agent" to MOBILE_UA, "Referer" to "https://www.tiktok.com/") +
+            cached?.headers.orEmpty() + task.directMediaHeaders
+        DownloadEngine.downloadDirectMediaStream(
+            context, task, streamUrl, stagingDir = stagingDir, publicDir = publicDir,
+            onProgressUpdate = onProgressUpdate, requestHeaders = headers
+        )
     }
 
     private fun followRedirects(startUrl: String): String {
