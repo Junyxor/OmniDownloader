@@ -25,7 +25,7 @@
 
 | 平台型態 | 適用裝置 | 核心技術棧 | 取得與安裝方式 |
 | :--- | :--- | :--- | :--- |
-| **🤖 Android 原生版** | Android 手機 / 平板 / 電視盒 (Android 8.0+) | Kotlin + Jetpack Compose + yt-dlp + FFmpeg | [下載最新 APK (v1.5.10)](https://github.com/baishu136/OmniDownloader/releases/latest/download/OmniDownloader_LATEST.apk) 或 Releases 頁面 |
+| **🤖 Android 原生版** | Android 手機 / 平板 / 電視盒 (Android 8.0+) | Kotlin + Jetpack Compose + aria2 + Kotlin 原生解析 | [下載最新 APK (v1.5.10)](https://github.com/baishu136/OmniDownloader/releases/latest/download/OmniDownloader_LATEST.apk) 或 Releases 頁面 |
 | **🍎 iOS 原生版** | iPhone / iPad (iOS 15.0+) | Swift 5.9 + SwiftUI + AVFoundation 原生硬體混流 + Photos 相簿 | 原始碼工程位於 [`OmniDownloader-iOS`](OmniDownloader-iOS)，支援 GitHub Actions 免費打包 IPA 並透過 TrollStore 巨魔或自簽側載 |
 | **💻 Windows 桌面版** | Windows 10 / 11 (64位元) | Python 3 + FastAPI + Edge WebView2 原生獨立視窗 + 內建 FFmpeg | 下載 [`windows/release/OmniDownloader_桌面独立版.zip`](windows/release/)，免環境解壓即用，附帶多國語言說明 |
 | **🌐 Web 網頁純後台版** | Windows 電腦，支援區域網路內任意手機/平板瀏覽器存取 | 輕量系統列托盤常駐 + 本地 Web 服務 + 內建 FFmpeg | 下載 [`windows/release/OmniDownloader_网页纯后台版.zip`](windows/release/)，靜默常駐托盤，支援瀏覽器原生接管下載 |

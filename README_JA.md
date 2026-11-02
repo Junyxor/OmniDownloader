@@ -25,7 +25,7 @@
 
 | プラットフォーム | 対象デバイス | コア技術 | インストールと取得方法 |
 | :--- | :--- | :--- | :--- |
-| **🤖 Android 版** | Android スマートフォン / タブレット / TV (Android 8.0+) | Kotlin + Jetpack Compose + yt-dlp + FFmpeg | [最新 APK (v1.5.10) をダウンロード](https://github.com/baishu136/OmniDownloader/releases/latest/download/OmniDownloader_LATEST.apk) または Releases より |
+| **🤖 Android 版** | Android スマートフォン / タブレット / TV (Android 8.0+) | Kotlin + Jetpack Compose + aria2 + Kotlin ネイティブ解析 | [最新 APK (v1.5.10) をダウンロード](https://github.com/baishu136/OmniDownloader/releases/latest/download/OmniDownloader_LATEST.apk) または Releases より |
 | **🍎 iOS 版** | iPhone / iPad (iOS 15.0+) | Swift 5.9 + SwiftUI + AVFoundation ハードウェア合成 + 写真アプリ連携 | ソースコードは [`OmniDownloader-iOS`](OmniDownloader-iOS) に格納。GitHub Actions による無料 IPA ビルド & TrollStore / AltStore サイドロード対応 |
 | **💻 Windows デスクトップ版** | Windows 10 / 11 (64bit) | Python 3 + FastAPI + Edge WebView2 独立ウィンドウ + 内蔵 FFmpeg | [`windows/release/OmniDownloader_桌面独立版.zip`](windows/release/) を展開するだけですぐ使えます（多言語マニュアル同梱） |
 | **🌐 Web バックグラウンド版** | Windows PC（同一LAN内のスマホ・タブレットからも操作可能） | 軽量タスクトレイ常駐 + ローカルWebサーバー + 内蔵 FFmpeg | [`windows/release/OmniDownloader_网页纯后台版.zip`](windows/release/) をダウンロード。ブラウザ直接保存対応 |

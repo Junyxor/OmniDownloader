@@ -122,6 +122,8 @@ object YouTubeNativeExtractor {
             val row = progressive.optJSONObject(i) ?: continue
             val mime = row.optString("mimeType")
             if (!mime.startsWith("video/mp4") && !mime.startsWith("video/webm")) continue
+            if (row.optString("url").isBlank() &&
+                (row.has("signatureCipher") || row.has("cipher"))) cipherCount++
             if (row.optString("audioQuality").isBlank() &&
                 row.optInt("audioChannels", 0) == 0) continue
             val streamUrl = direct(row) ?: continue
@@ -138,6 +140,8 @@ object YouTubeNativeExtractor {
         for (i in 0 until adaptive.length()) {
             val row = adaptive.optJSONObject(i) ?: continue
             if (!row.optString("mimeType").startsWith("audio/mp4")) continue
+            if (row.optString("url").isBlank() &&
+                (row.has("signatureCipher") || row.has("cipher"))) cipherCount++
             val streamUrl = direct(row) ?: continue
             val kbps = row.optInt("bitrate") / 1000
             audios += FormatOption(

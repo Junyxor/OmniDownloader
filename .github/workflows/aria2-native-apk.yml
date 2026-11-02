@@ -56,7 +56,7 @@ jobs:
           chmod +x ./gradlew
           ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace
 
-      - name: Verify no Python/FFmpeg in APK and report size
+      - name: Verify aria2-only APK content and report size
         shell: bash
         run: |
           set -euo pipefail
