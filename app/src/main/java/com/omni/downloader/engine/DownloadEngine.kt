@@ -59,19 +59,31 @@ object DownloadEngine {
             when {
                 MihoyoVideoExtractor.isSupported(url) -> MihoyoVideoExtractor.extract(url)
                 site == "哔哩哔哩" -> BilibiliDirectExtractor.extract(url)
-                site == "TikTok" || TikTokDirectExtractor.isSupported(url) -> TikTokDirectExtractor.extract(url)
-                DomesticDirectExtractor.isSupported(site) -> DomesticDirectExtractor.extract(url, site)
+                site == "TikTok" || TikTokDirectExtractor.isSupported(url) -> {
+                    val direct = TikTokDirectExtractor.extract(url)
+                    if (direct.isSuccess) direct else LuxExtractor.extract(context, url, proxyUrl)
+                }
+                DomesticDirectExtractor.isSupported(site) -> {
+                    val direct = DomesticDirectExtractor.extract(url, site)
+                    if (direct.isSuccess) direct else {
+                        val lux = LuxExtractor.extract(context, url, proxyUrl)
+                        if (lux.isSuccess) lux else Result.failure(IOException(
+                            "$site 原生解析失败：" + direct.exceptionOrNull()?.message +
+                            "；Lux 后备解析失败：" + lux.exceptionOrNull()?.message
+                        ))
+                    }
+                }
                 UrlSniffer.isDirectMediaUrl(url) && !UrlSniffer.isM3u8Url(url) ->
                     Result.success(VideoMetadata(
                         url = url, title = "直接媒体文件", siteName = "直链",
                         availableVideoFormats = listOf(FormatOption(url, "原始媒体", ext = "mp4"))
                     ))
-                // Generic HTML5 media is a conservative fallback, not a universal extractor.
-                // Explicitly avoid sites needing signed JS players, auth or encrypted manifests.
-                site in setOf("YouTube", "Instagram", "Facebook", "X (Twitter)", "Pinterest") ->
-                    Result.failure(IOException(
-                        "$site 目前没有可靠的原生专用解析器，通用网页解析不能保证获取该平台的视频。"
-                    ))
+                LuxExtractor.supports(site) -> {
+                    val lux = LuxExtractor.extract(context, url, proxyUrl)
+                    if (lux.isSuccess) lux else if (site == "网络视频") {
+                        GenericWebVideoExtractor.extract(url)
+                    } else lux
+                }
                 else -> GenericWebVideoExtractor.extract(url)
             }
         } catch (e: Exception) { Result.failure(e) }
@@ -123,6 +135,14 @@ object DownloadEngine {
         val site = UrlSniffer.identifySite(url)
         val staging = File(context.noBackupFilesDir, "native-staging").apply { mkdirs() }
         val output = getDownloadDir(context).apply { mkdirs() }
+        // Route via the parser that actually produced the selected formats.
+        // In particular, do not send a Lux YouTube stream through an unrelated site adapter.
+        if (task.parserId == "lux") {
+            return@withContext LuxExtractor.download(context, task, staging, output, onProgressUpdate, proxyUrl)
+        }
+        if (task.parserId == "douyin" && task.url.contains("#omni_douyin_image=")) {
+            return@withContext DomesticDirectExtractor.download(context, task, staging, output, onProgressUpdate, proxyUrl)
+        }
         if (task.downloadType == DownloadType.COVER) {
             return@withContext downloadCoverFile(context, task.thumbnailUrl.ifBlank { task.url }, task.title,
                 proxyUrl, output, onProgressUpdate)
@@ -227,6 +247,7 @@ object DownloadEngine {
     fun cancelTask(taskId: String) {
         cancelled.add(taskId)
         NativeTransfer.cancel(taskId)
+        LuxExtractor.cancel(taskId)
     }
 
     private fun safeTitle(value: String): String =
@@ -244,7 +265,8 @@ object DownloadEngine {
                 host.endsWith(".hdslb.com") -> "https://www.bilibili.com/"
             host.endsWith(".mihoyo.com") -> "https://baike.mihoyo.com/"
             host.endsWith(".miyoushe.com") -> "https://www.miyoushe.com/"
-            host.endsWith(".douyin.com") || host.endsWith(".snssdk.com") -> "https://www.douyin.com/"
+            host.endsWith(".douyin.com") || host.endsWith(".snssdk.com") ||
+                host.endsWith(".douyinpic.com") || host.endsWith(".douyinvod.com") -> "https://www.douyin.com/"
             host.endsWith(".yximgs.com") -> "https://www.kuaishou.com/"
             host.endsWith(".xhscdn.com") -> "https://www.xiaohongshu.com/"
             host.endsWith(".twimg.com") -> "https://x.com/"
