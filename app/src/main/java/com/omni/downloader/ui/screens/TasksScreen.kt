@@ -55,6 +55,7 @@ import com.omni.downloader.ui.model.TaskDisplayItem
 import com.omni.downloader.ui.design.RetainedTabHost
 import com.omni.downloader.ui.design.OmniMotion
 import com.omni.downloader.ui.design.OmniSegmentedTabs
+import com.omni.downloader.ui.design.LocalGlassEnabled
 import com.omni.downloader.ui.localization.LocalAppStrings
 import com.omni.downloader.ui.viewmodel.MainViewModel
 
