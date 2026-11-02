@@ -189,7 +189,7 @@ object DownloadEngine {
                 source.delete()
                 return@withContext Result.failure(IOException("精简版不支持视频转 GIF"))
             }
-            else -> "mp4"
+            else -> detectMediaExtension(source)
         }
         val out = uniqueFile(publicDir, safeTitle(task.title), ext)
         val processed = File(stagingDir, "processed_${task.id}.$ext")
@@ -249,6 +249,26 @@ object DownloadEngine {
             host.endsWith(".xhscdn.com") -> "https://www.xiaohongshu.com/"
             host.endsWith(".twimg.com") -> "https://x.com/"
             else -> ""
+        }
+    }
+
+    /** Preserve actual stream containers instead of renaming WebM/Ogg/MP3 to .mp4. */
+    private fun detectMediaExtension(file: File): String {
+        val header = ByteArray(24)
+        val count = runCatching { FileInputStream(file).use { it.read(header) } }.getOrDefault(0)
+        if (count < 12) return "bin"
+        val ascii = String(header, 0, count, Charsets.ISO_8859_1)
+        return when {
+            ascii.startsWith("ID3") -> "mp3"
+            header[0] == 0xff.toByte() && (header[1].toInt() and 0xe0) == 0xe0 -> "mp3"
+            ascii.startsWith("OggS") -> "ogg"
+            ascii.startsWith("RIFF") && ascii.substring(8, 12) == "WAVE" -> "wav"
+            ascii.startsWith("RIFF") && ascii.substring(8, 12) == "AVI " -> "avi"
+            header[0] == 0x1a.toByte() && header[1] == 0x45.toByte() &&
+                header[2] == 0xdf.toByte() && header[3] == 0xa3.toByte() -> "webm"
+            ascii.substring(4, 8) == "ftyp" -> "mp4"
+            header[0] == 0x47.toByte() -> "ts"
+            else -> "bin"
         }
     }
 
