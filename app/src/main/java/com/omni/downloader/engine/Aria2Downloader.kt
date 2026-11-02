@@ -43,7 +43,8 @@ object Aria2Downloader {
 
     fun cancel(taskId: String) {
         cancelled.add(taskId)
-        processes[taskId]?.destroyForcibly()
+        // SIGTERM allows aria2 to persist its .aria2 control file for safe resume.
+        processes[taskId]?.destroy()
     }
 
     /** Blocking operation: callers must dispatch to IO. */
