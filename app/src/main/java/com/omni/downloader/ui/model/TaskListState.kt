@@ -36,7 +36,7 @@ internal fun buildTaskListState(tasks: List<DownloadTask>): TaskListState {
             is TaskDisplayItem.Single -> listOf(item.task)
             is TaskDisplayItem.Collection -> item.tasks
         }
-        if (members.any { it.status == TaskStatus.DOWNLOADING || it.status == TaskStatus.PROCESSING || it.status == TaskStatus.PENDING }) active.add(item)
+        if (members.any { it.status == TaskStatus.DOWNLOADING || it.status == TaskStatus.PROCESSING || it.status == TaskStatus.PENDING || it.status == TaskStatus.PAUSED }) active.add(item)
         if (members.all { it.status == TaskStatus.COMPLETED }) completed.add(item)
     }
     return TaskListState(
