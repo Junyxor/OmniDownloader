@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - feat/compose-liquid-glass-preview
+      - feat/liquid-glass-v2
     paths:
       - '.github/workflows/android-liquid-glass-apk.yml'
       - 'app/**'
@@ -16,6 +17,7 @@ on:
   pull_request:
     branches:
       - main
+      - feat/compose-liquid-glass-preview
     paths:
       - 'app/**'
       - 'cleaner/**'
