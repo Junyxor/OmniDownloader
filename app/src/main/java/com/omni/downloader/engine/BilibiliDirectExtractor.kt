@@ -505,7 +505,7 @@ object BilibiliDirectExtractor {
                                 )
                             }
 
-                            onProgressUpdate(95f, "", "正在音画无损合成 (FFmpeg)...", TaskStatus.PROCESSING)
+                            onProgressUpdate(95f, "", "正在原生无损合成音视频...", TaskStatus.PROCESSING)
                             val mergeRes = if (tempAudio.exists() && tempAudio.length() > 0) {
                                 FFmpegExecutor.mergeVideoAndAudio(context, tempVideo, tempAudio, mergedFile)
                             } else {
@@ -515,7 +515,7 @@ object BilibiliDirectExtractor {
                             if (mergeRes.isSuccess && mergedFile.exists() && mergedFile.length() > 1024) {
                                 mergeSuccess = true
                             } else {
-                                Log.w(TAG, "FFmpeg 混流未通过，将启用 DURL 渐进式备选直链: ${mergeRes.exceptionOrNull()?.message}")
+                                Log.w(TAG, "系统媒体混流未通过，尝试 DURL 完整音视频源: ${mergeRes.exceptionOrNull()?.message}")
                             }
                         } catch (e: Exception) {
                             Log.w(TAG, "DASH 下载或合成异常: ${e.message}")
@@ -526,7 +526,7 @@ object BilibiliDirectExtractor {
                     }
                 }
 
-                // 若 DASH 不可用或合成失败，自动启用 DURL 渐进式一体化 MP4 直连（免合并，100% 成功）
+                // 若 DASH 不可用或合成失败，可尝试官方 DURL，但无法保证该接口总有完整的音视频源。
                 if (!mergeSuccess) {
                     onProgressUpdate(10f, "", "切换官方 MP4 直链通道...", TaskStatus.DOWNLOADING)
                     val durlSuccess = downloadDurlDirectly(
@@ -589,8 +589,11 @@ object BilibiliDirectExtractor {
                 val mergedFile = File(stagingDir, "bili_${task.id}_final.mp4")
                 val res = FFmpegExecutor.stripAudio(context, tempVideo, mergedFile)
                 if (res.isFailure) {
-                    // 若 stripAudio 失败，直接作为 mp4 封装
-                    tempVideo.copyTo(mergedFile, overwrite = true)
+                    tempVideo.delete()
+                    return@withContext Result.failure(IOException(
+                        "系统媒体封装器无法处理此 DASH 视频轨，拒绝将 .m4s 冒充为 MP4",
+                        res.exceptionOrNull()
+                    ))
                 }
 
                 var finalPublicFile = File(publicDir, "$cleanTitle.mp4")
@@ -633,8 +636,10 @@ object BilibiliDirectExtractor {
                     return@withContext Result.failure(Exception("无法获取高品质音轨流"))
                 }
 
-                val ext = task.audioFormat.ext
-                val finalExt = if (ext == "mp3") "mp3" else "m4a"
+                if (task.audioFormat.ext != "m4a") {
+                    return@withContext Result.failure(IOException("精简版仅支持 M4A 音轨导出，无法编码 MP3/FLAC/OPUS"))
+                }
+                val finalExt = "m4a"
                 val tempAudio = File(stagingDir, "bili_${task.id}_raw_audio.m4s")
 
                 downloadStreamToFile(
@@ -650,20 +655,17 @@ object BilibiliDirectExtractor {
                 )
 
                 val finalAudioStaging = File(stagingDir, "bili_${task.id}_final.$finalExt")
-                if (finalExt == "m4a") {
-                    // 原声即为 aac/m4a，直接重命名封装
-                    tempAudio.copyTo(finalAudioStaging, overwrite = true)
-                } else {
-                    onProgressUpdate(92f, "", "正在转换为 ${finalExt.uppercase()}...", TaskStatus.PROCESSING)
-                    val extractRes = FFmpegExecutor.extractAudio(context, tempAudio, finalAudioStaging, finalExt)
-                    if (extractRes.isFailure) {
-                        Log.w(TAG, "转码 MP3 降级为原生 M4A 导出")
-                        tempAudio.copyTo(File(stagingDir, "bili_${task.id}_final.m4a"), overwrite = true)
-                    }
+                onProgressUpdate(92f, "", "正在原生封装 M4A...", TaskStatus.PROCESSING)
+                val extractRes = FFmpegExecutor.extractAudio(context, tempAudio, finalAudioStaging, "m4a")
+                if (extractRes.isFailure) {
+                    tempAudio.delete()
+                    return@withContext Result.failure(IOException(
+                        "系统媒体封装器无法处理此音轨，拒绝将 .m4s 冒充为 M4A",
+                        extractRes.exceptionOrNull()
+                    ))
                 }
-
-                val actualExt = if (finalAudioStaging.exists()) finalExt else "m4a"
-                val actualStaging = if (finalAudioStaging.exists()) finalAudioStaging else File(stagingDir, "bili_${task.id}_final.m4a")
+                val actualExt = "m4a"
+                val actualStaging = finalAudioStaging
 
                 var finalPublicFile = File(publicDir, "$cleanTitle.$actualExt")
                 try {
@@ -710,7 +712,7 @@ object BilibiliDirectExtractor {
                 "Referer" to "https://www.bilibili.com/video/$bvid",
                 "Cookie" to getCookieHeader()
             )
-            val result = Aria2Downloader.download(
+            val result = NativeTransfer.download(
                 context, taskId, candidate, dest, headers
             ) { progress, speed, eta, status ->
                 onProgressUpdate(
@@ -726,7 +728,7 @@ object BilibiliDirectExtractor {
     }
 
     /**
-     * 当 DASH 双流或 FFmpeg 混流出现异常时，直接从 B 站官方拉取渐进式一体化 MP4 直链 (无须混流，100% 成功)
+     * DASH 封装失败时的单文件 DURL 尝试。官方未必返回可用清晰度或完整流。
      */
     private fun downloadDurlDirectly(
         context: Context,
@@ -751,7 +753,11 @@ object BilibiliDirectExtractor {
             val body = resp.body?.string() ?: ""
             val json = JSONObject(body)
             val durlArray = json.optJSONObject("data")?.optJSONArray("durl") ?: return false
-            if (durlArray.length() == 0) return false
+            if (durlArray.length() != 1) {
+                // A multi-segment response must be concatenated properly; first-part-only output is corrupt.
+                Log.w(TAG, "DURL returned ${durlArray.length()} segments; refuse incomplete MP4 export")
+                return false
+            }
 
             val first = durlArray.getJSONObject(0)
             val streamUrl = first.optString("url", "")
