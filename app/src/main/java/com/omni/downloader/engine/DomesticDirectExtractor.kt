@@ -90,13 +90,13 @@ object DomesticDirectExtractor {
         val resolvedUrl = followRedirects(rawUrl, MOBILE_UA)
         Log.d(TAG, "抖音重定向目标: $resolvedUrl")
 
-        // 提取视频 ID：兼容 video/xxx, note/xxx, item_ids=xxx, 以及纯数字
-        val idMatcher = Pattern.compile("""(?:video|note|item_ids=)/?(\d+)""").matcher(resolvedUrl)
-        val videoId = if (idMatcher.find()) {
-            idMatcher.group(1) ?: ""
-        } else {
-            val fallbackMatcher = Pattern.compile("""(\d{18,20})""").matcher(resolvedUrl)
-            if (fallbackMatcher.find()) fallbackMatcher.group(1) ?: "" else ""
+        // ID must originate from the actual article/video route, never from an
+        // unrelated 19-digit analytics token or a recommended video's metadata.
+        val videoId = douyinIdFromUrl(resolvedUrl)
+        if (videoId.isBlank()) {
+            return Result.failure(IllegalArgumentException(
+                "分享链接未能重定向到含作品 ID 的抖音页面，拒绝返回其它推荐作品。请尝试复制完整作品链接。"
+            ))
         }
 
         if (videoId.isNotEmpty()) {
@@ -120,7 +120,18 @@ object DomesticDirectExtractor {
             }
         }
 
-        return Result.failure(Exception("未能从抖音提取到无水印视频流，将尝试通用引擎"))
+        return Result.failure(Exception("抖音页面未返回与目标作品 ID 匹配的视频；拒绝误下载其它作品"))
+    }
+
+    /** Only IDs in known Douyin content routes/queries qualify as the requested work. */
+    internal fun douyinIdFromUrl(url: String): String {
+        val path = runCatching { java.net.URI(url).path.orEmpty() }.getOrDefault("")
+        val match = Regex("""/(?:video|note|slide|aweme)/(\d{17,22})(?:/|$)""")
+            .find(path)
+        if (match != null) return match.groupValues[1]
+        val query = runCatching { java.net.URI(url).rawQuery.orEmpty() }.getOrDefault("")
+        return Regex("""(?:^|&)(?:aweme_id|item_ids|item_id)=(\d{17,22})(?:&|$)""")
+            .find(query)?.groupValues?.get(1).orEmpty()
     }
 
     private fun requestDouyinFeedApi(videoId: String, pageUrl: String): VideoMetadata? {
@@ -137,19 +148,12 @@ object DomesticDirectExtractor {
             val json = JSONObject(body)
             val awemeList = json.optJSONArray("aweme_list") ?: return null
 
-            // 查找与 videoId 匹配的 item，若未找到则取首个
-            var matchedItem: JSONObject? = null
-            for (i in 0 until awemeList.length()) {
-                val item = awemeList.optJSONObject(i) ?: continue
-                if (item.optString("aweme_id") == videoId) {
-                    matchedItem = item
-                    break
-                }
-            }
-            if (matchedItem == null && awemeList.length() > 0) {
-                matchedItem = awemeList.optJSONObject(0)
-            }
-            if (matchedItem == null) return null
+            // Feed responses may contain suggestions. NEVER use the first result
+            // if the API didn't return the exact requested work ID.
+            val matchedItem = (0 until awemeList.length())
+                .mapNotNull { awemeList.optJSONObject(it) }
+                .firstOrNull { it.optString("aweme_id") == videoId }
+                ?: return null
 
             val title = matchedItem.optString("desc", "抖音视频_$videoId").trim()
             val author = matchedItem.optJSONObject("author")?.optString("nickname", "抖音创作者") ?: "抖音创作者"
@@ -242,6 +246,13 @@ object DomesticDirectExtractor {
     }
 
     private fun parseDouyinHtml(html: String, pageUrl: String, videoId: String): VideoMetadata? {
+        // A page can contain unrelated recommendations and ads. The regex based
+        // fallback is allowed ONLY if exactly one media ID occurs on the page
+        // and it is the one requested. Otherwise fail closed.
+        if (videoId.isBlank()) return null
+        val observedIds = Regex(""""(?:aweme_id|awemeId|item_id)"\s*:\s*"(\d{17,22})"""")
+            .findAll(html).map { it.groupValues[1] }.toSet()
+        if (observedIds != setOf(videoId)) return null
         var videoUrl = ""
         var title = "抖音短视频"
         var author = "抖音用户"
