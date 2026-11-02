@@ -107,7 +107,13 @@ object LuxExtractor {
                 thumbnailUrl = images.first().url, multiMediaList = children, parserId = "lux"
             )
         }
-        val formats = streams(info).map { stream ->
+        // Do not advertise qualities that our lightweight Android muxer cannot
+        // actually save. A single WebM file is fine; WebM DASH dual-track is not.
+        val formats = streams(info).filter { stream ->
+            stream.parts.size == 1 ||
+                (stream.parts.size == 2 &&
+                    stream.parts.all { it.ext.lowercase() in setOf("mp4", "m4a") })
+        }.map { stream ->
             FormatOption(
                 formatId = "lux:" + stream.id,
                 resolutionLabel = stream.label,
