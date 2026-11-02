@@ -225,6 +225,12 @@ private fun TaskListPane(
     val onCancelTask = remember(viewModel, context) {
         { taskId: String -> viewModel.cancelTask(context, taskId) }
     }
+    val onPauseTask = remember(viewModel, context) {
+        { taskId: String -> viewModel.pauseTask(context, taskId) }
+    }
+    val onResumeTask = remember(viewModel, context) {
+        { taskId: String -> viewModel.resumeTask(context, taskId) }
+    }
     val onDeleteTask = remember(viewModel) {
         { taskId: String, deleteFile: Boolean -> viewModel.deleteTask(taskId, deleteFile) }
     }
@@ -235,14 +241,20 @@ private fun TaskListPane(
     val onCancelCollection = remember(viewModel, context) {
         { colId: String -> viewModel.cancelCollection(context, colId) }
     }
+    val onPauseCollection = remember(viewModel, context) {
+        { colId: String -> viewModel.pauseCollection(context, colId) }
+    }
+    val onResumeCollection = remember(viewModel, context) {
+        { colId: String -> viewModel.resumeCollection(context, colId) }
+    }
     val onDeleteCollection = remember(viewModel) {
         { colId: String, deleteFile: Boolean -> viewModel.deleteCollection(colId, deleteFile) }
     }
     val onRetryCollection = remember(viewModel, context) {
         { colId: String -> viewModel.retryCollection(context, colId) }
     }
-    val onRetryEpisode = remember(context) {
-        { taskId: String -> com.omni.downloader.service.DownloadService.startDownload(context, taskId) }
+    val onRetryEpisode = remember(viewModel, context) {
+        { taskId: String -> viewModel.resumeTask(context, taskId) }
     }
 
     val progressFlowProvider = remember(viewModel) { { id: String -> viewModel.getTaskProgress(id) } }
@@ -276,6 +288,8 @@ private fun TaskListPane(
                     TaskCard(
                         task = item.task,
                         onCancel = onCancelTask,
+                        onPause = onPauseTask,
+                        onResume = onResumeTask,
                         onDelete = onDeleteTask,
                         onRetry = onRetryTask,
                         progressFlowProvider = progressFlowProvider,
@@ -288,6 +302,8 @@ private fun TaskListPane(
                         collectionTitle = item.collectionTitle,
                         tasks = item.tasks,
                         onCancelCollection = onCancelCollection,
+                        onPauseCollection = onPauseCollection,
+                        onResumeCollection = onResumeCollection,
                         onDeleteCollection = onDeleteCollection,
                         onRetryCollection = onRetryCollection,
                         onRetryEpisode = onRetryEpisode,
