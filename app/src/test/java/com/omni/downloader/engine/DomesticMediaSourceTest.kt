@@ -30,6 +30,7 @@ class DomesticMediaSourceTest {
         val task = Json.decodeFromString<DownloadTask>(old)
         assertEquals("", task.directMediaUrl)
         assertTrue(task.directMediaHeaders.isEmpty())
+        assertTrue(task.directMediaAlternates.isEmpty())
     }
 
     @Test fun collectionUsesEachEpisodesOwnSource() {
@@ -53,4 +54,18 @@ class DomesticMediaSourceTest {
     @Test fun extractorFormatIdsAreNotMistakenForUrls() {
         assertEquals("", DomesticMediaSource.url(metadata(url = "137")))
     }
+    @Test fun galleryMirrorsSurviveTaskPersistence() {
+        val original = "https://cdn.example.net/primary.jpg"
+        val mirrors = listOf("https://backup.example.net/image.jpg", "https://backup2.example.net/image.jpg")
+        val task = DownloadTask(
+            id = "gallery", url = "https://www.iesdouyin.com/share/slides/7700835139168900858#omni_douyin_image=0",
+            title = "gallery", downloadType = DownloadType.COVER,
+            parserId = "douyin", directMediaUrl = original, directMediaAlternates = mirrors
+        )
+        val restored = Json.decodeFromString<DownloadTask>(Json.encodeToString(task))
+        assertEquals(original, restored.directMediaUrl)
+        assertEquals(mirrors, restored.directMediaAlternates)
+        assertEquals("douyin", restored.parserId)
+    }
+
 }
