@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - refactor/aria2-native-core
+      - fix/douyin-native-quality-gallery-20261102
   workflow_dispatch:
 
 permissions:
