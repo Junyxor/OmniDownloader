@@ -66,6 +66,10 @@ object DomesticDirectExtractor {
         return site == "抖音" || site == "快手" || site == "小红书"
     }
 
+    // 图文（包括分享幻灯片）不能作为视频 Feed 处理。
+    private val douyinImagePath = Pattern.compile("""/(?:note|slides)/\d{18,20}(?:[/?#]|$)""", Pattern.CASE_INSENSITIVE)
+    internal fun isDouyinImagePostUrl(url: String): Boolean = douyinImagePath.matcher(url).find()
+
     /**
      * 解析视频元数据
      */
@@ -87,8 +91,15 @@ object DomesticDirectExtractor {
      * 抖音无水印直接解析
      */
     private fun extractDouyin(rawUrl: String): Result<VideoMetadata> {
+        if (isDouyinImagePostUrl(rawUrl)) {
+            return Result.failure(UnsupportedOperationException("该链接为抖音图文作品，必须使用图集解析；不能当作视频下载"))
+        }
+
         val resolvedUrl = followRedirects(rawUrl, MOBILE_UA)
         Log.d(TAG, "抖音重定向目标: $resolvedUrl")
+        if (isDouyinImagePostUrl(resolvedUrl)) {
+            return Result.failure(UnsupportedOperationException("该链接为抖音图文作品，必须使用图集解析；不能当作视频下载"))
+        }
 
         // 提取视频 ID：兼容 video/xxx, note/xxx, item_ids=xxx, 以及纯数字
         val idMatcher = Pattern.compile("""(?:video|note|item_ids=)/?(\d+)""").matcher(resolvedUrl)
@@ -137,7 +148,7 @@ object DomesticDirectExtractor {
             val json = JSONObject(body)
             val awemeList = json.optJSONArray("aweme_list") ?: return null
 
-            // 查找与 videoId 匹配的 item，若未找到则取首个
+            // 只能使用与作品 ID 严格匹配的记录，绝不回退到列表第一项。
             var matchedItem: JSONObject? = null
             for (i in 0 until awemeList.length()) {
                 val item = awemeList.optJSONObject(i) ?: continue
@@ -145,9 +156,6 @@ object DomesticDirectExtractor {
                     matchedItem = item
                     break
                 }
-            }
-            if (matchedItem == null && awemeList.length() > 0) {
-                matchedItem = awemeList.optJSONObject(0)
             }
             if (matchedItem == null) return null
 
