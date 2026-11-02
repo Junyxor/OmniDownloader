@@ -47,6 +47,14 @@ class SettingsRepository private constructor(context: Context) {
     )
     val themeMode: StateFlow<String> = _themeMode.asStateFlow()
 
+    private val _glassEnabled = MutableStateFlow(prefs.getBoolean(KEY_GLASS_ENABLED, false))
+    val glassEnabled: StateFlow<Boolean> = _glassEnabled.asStateFlow()
+
+    fun setGlassEnabled(enabled: Boolean) {
+        _glassEnabled.value = enabled
+        prefs.edit().putBoolean(KEY_GLASS_ENABLED, enabled).apply()
+    }
+
     init {
         // 新版本配置规范迁移：仅在首次升级到版本 40 时清理旧版内置固定 ID，绝不误伤用户保存的任何网站
         val lastConfigVersion = prefs.getInt(KEY_APP_CONFIG_VERSION, 0)
