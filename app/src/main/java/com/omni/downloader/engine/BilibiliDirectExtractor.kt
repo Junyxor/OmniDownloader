@@ -518,16 +518,25 @@ object BilibiliDirectExtractor {
                                 Log.w(TAG, "系统媒体混流未通过，尝试 DURL 完整音视频源: ${mergeRes.exceptionOrNull()?.message}")
                             }
                         } catch (e: Exception) {
-                            Log.w(TAG, "DASH 下载或合成异常: ${e.message}")
+                            if (Aria2Downloader.isCancelled(task.id)) {
+                                return@withContext Result.failure(IOException("下载已取消", e))
+                            }
+                            Log.w(TAG, "DASH 下载或原生封装异常，将尝试备用媒体源: ${e.message}")
                         } finally {
-                            tempVideo.delete()
-                            tempAudio.delete()
+                            // Keep failed DASH partials for a future validated resume.
+                            if (mergeSuccess) {
+                                cleanupStagingFile(tempVideo)
+                                cleanupStagingFile(tempAudio)
+                            }
                         }
                     }
                 }
 
                 // 若 DASH 不可用或合成失败，可尝试官方 DURL，但无法保证该接口总有完整的音视频源。
                 if (!mergeSuccess) {
+                    if (Aria2Downloader.isCancelled(task.id)) {
+                        return@withContext Result.failure(IOException("下载已取消"))
+                    }
                     onProgressUpdate(10f, "", "切换官方 MP4 直链通道...", TaskStatus.DOWNLOADING)
                     val durlSuccess = downloadDurlDirectly(
                         context = context, taskId = task.id,
@@ -549,7 +558,10 @@ object BilibiliDirectExtractor {
                     finalPublicFile = File(publicDir, "bili_${bvid}_${System.currentTimeMillis()}.mp4")
                     mergedFile.copyTo(finalPublicFile, overwrite = true)
                 }
-                mergedFile.delete()
+                cleanupStagingFile(mergedFile)
+                // Complete DURL fallback renders failed DASH leftovers unnecessary.
+                cleanupStagingFile(File(stagingDir, "bili_${task.id}_video.m4s"))
+                cleanupStagingFile(File(stagingDir, "bili_${task.id}_audio.m4s"))
 
                 try {
                     android.media.MediaScannerConnection.scanFile(context, arrayOf(finalPublicFile.absolutePath), null, null)
@@ -603,8 +615,8 @@ object BilibiliDirectExtractor {
                     finalPublicFile = File(publicDir, "bili_${bvid}_${System.currentTimeMillis()}.mp4")
                     mergedFile.copyTo(finalPublicFile, overwrite = true)
                 }
-                tempVideo.delete()
-                mergedFile.delete()
+                cleanupStagingFile(tempVideo)
+                cleanupStagingFile(mergedFile)
 
                 try {
                     android.media.MediaScannerConnection.scanFile(context, arrayOf(finalPublicFile.absolutePath), null, null)
@@ -674,8 +686,8 @@ object BilibiliDirectExtractor {
                     finalPublicFile = File(publicDir, "bili_${bvid}_${System.currentTimeMillis()}.$actualExt")
                     actualStaging.copyTo(finalPublicFile, overwrite = true)
                 }
-                tempAudio.delete()
-                actualStaging.delete()
+                cleanupStagingFile(tempAudio)
+                cleanupStagingFile(actualStaging)
 
                 try {
                     android.media.MediaScannerConnection.scanFile(context, arrayOf(finalPublicFile.absolutePath), null, null)
@@ -690,6 +702,13 @@ object BilibiliDirectExtractor {
             Log.e(TAG, "B站直连下载执行失败", e)
             Result.failure(e)
         }
+    }
+
+    private fun cleanupStagingFile(file: File) {
+        file.delete()
+        File(file.absolutePath + ".aria2").delete()
+        File(file.absolutePath + ".aria2source").delete()
+        File(file.absolutePath + ".httpresume").delete()
     }
 
     /** Multi-connection aria2 transfer for each Bilibili DASH video/audio track. */
