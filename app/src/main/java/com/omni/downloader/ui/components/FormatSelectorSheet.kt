@@ -67,7 +67,7 @@ fun FormatSelectorSheet(
     val strings = com.omni.downloader.ui.localization.LocalAppStrings.current
     val isMultiVideo = metadata.multiMediaList.size > 1
     val isImagePost = metadata.siteName == "图文"
-    var isCollectionMode by remember { mutableStateOf(false) }
+    var isCollectionMode by remember(metadata) { mutableStateOf(isImagePost) }
     var selectedEpisodes by remember(metadata) { mutableStateOf(metadata.multiMediaList.indices.toSet()) }
     var saveCoverWithDownload by remember { mutableStateOf(false) }
 
@@ -410,7 +410,7 @@ fun FormatSelectorSheet(
                     fontWeight = FontWeight.Bold
                 )
 
-                if (currentMedia.thumbnailUrl.isNotEmpty()) {
+                if (!isImagePost && currentMedia.thumbnailUrl.isNotEmpty()) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
