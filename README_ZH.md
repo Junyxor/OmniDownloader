@@ -10,7 +10,7 @@
 </p>
 
 [![Release](https://img.shields.io/github/v/release/baishu136/OmniDownloader?color=blue&label=Release)](https://github.com/baishu136/OmniDownloader/releases)
-[![Android](https://img.shields.io/badge/Android-v1.6.2--native--beta1-blue.svg)](https://developer.android.com)
+[![Android](https://img.shields.io/badge/Android-v1.6.3--native--beta2-blue.svg)](https://developer.android.com)
 [![iOS](https://img.shields.io/badge/iOS-SwiftUI%20Native-orange.svg)](OmniDownloader-iOS)
 [![Windows](https://img.shields.io/badge/Windows-Desktop%20%26%20Web-blue.svg)](windows)
 [![License](https://img.shields.io/badge/License-MIT-orange.svg)](LICENSE)
@@ -19,7 +19,7 @@
 
 </div>
 
-> **Android v1.6.2 Native Beta 1（仅本重构分支）**：使用 aria2 + OkHttp，支持暂停/断点续传和部分米游社公开文章视频；增加 HTML5、OpenGraph、JSON-LD 通用解析。**不内置 yt-dlp/Python/FFmpeg，也不宣称 YouTube、X、Instagram 等站点完整支持。** HLS/M3U8、GIF 与 MP3/FLAC/OPUS 转码仍需独立模块。以下 Windows/iOS 与历史版本资料不代表本 Android Beta 的全部功能。
+> **Android v1.6.3 Native Beta 2（仅本重构分支）**：aria2 高速下载 + MIT 许可证 **Lux Go 原生解析器**，为 YouTube、Instagram、Facebook、Pinterest、抖音等站点提供实际解析入口；公开 X 帖子可先经 [FxEmbed](https://docs.fxembed.com/api/introduction/) 第三方公共 API 获取媒体，失败后回退 Lux。支持部分米游社公开文章、抖音图文原图和 HTML5 网页。**这仍是 Beta：不能保证每条分享链接均成功，登录限制、反爬和 DRM 仍可能影响解析。** Android 内置 Python/FFmpeg 依赖已移除；HLS、多种转码及部分分轨封装格式尚未实现。此仓库其他端与历史版本功能不等于 Android Beta 的功能。
 
 
 ---
@@ -28,7 +28,7 @@
 
 | 平台形态 | 适用设备 | 核心技术栈 | 获取与安装方式 |
 | :--- | :--- | :--- | :--- |
-| **🤖 Android 原生版** | Android 手机 / 平板 / 车机 / 电视 (Android 8.0+) | Kotlin + Jetpack Compose + 原生 aria2 + OkHttp + Android MediaMuxer | [本分支测试 APK（Actions）](https://github.com/Junyxor/OmniDownloader/actions/workflows/aria2-native-apk.yml) |
+| **🤖 Android 原生版** | Android 手机 / 平板 / 车机 / 电视 (Android 8.0+) | Kotlin + Compose + aria2 + Lux（Go/MIT）+ OkHttp + Android MediaMuxer | [本分支测试 APK（Actions）](https://github.com/Junyxor/OmniDownloader/actions/workflows/aria2-native-apk.yml) |
 | **🍎 iOS 原生版** | iPhone / iPad (iOS 15.0+) | Swift 5.9 + SwiftUI + AVFoundation 原生硬件混流 + Photos 相簿 | 源码工程在 [`OmniDownloader-iOS`](OmniDownloader-iOS)，支持 GitHub Actions 免费打包 IPA 并通过 TrollStore 巨魔或自签侧载 |
 | **💻 Windows 桌面版** | Windows 10 / 11 (64位) | Python 3 + FastAPI + Edge WebView2 原生独立窗口 + 内置 FFmpeg | 下载 [`windows/release/OmniDownloader_桌面独立版.zip`](windows/release/)，免环境解压即用，附带多国语言说明 |
 | **🌐 Web 网页纯后台版** | Windows 电脑，支持局域网内任意手机/平板浏览器访问 | 轻量托盘守护进程 + 本地 Web 服务 + 内置 FFmpeg | 下载 [`windows/release/OmniDownloader_网页纯后台版.zip`](windows/release/)，静默常驻托盘，支持浏览器原生接管下载 |
@@ -48,9 +48,9 @@
   - **小红书 (Xiaohongshu)**：图文笔记及超清视频极速抓取。
 - **米哈游百科 / 部分米游社公开帖子视频**：Android 原生解析公开词条与部分含 VOD 的社区帖子，可选源画质；需要登录、专用播放器或非公开视频不保证支持。
 - **国际主流媒体全方位覆盖**：
-  - **YouTube**：本 Android 轻量分支尚无可靠原生适配；其他端的既有能力不等于本 APK 支持。
+  - **YouTube**：已集成本地 Lux 解析器，可获取公开视频的可用流；站点验证与分轨混流仍需真机测试。
   - **TikTok**：免登录绕过 WAF，提取 1080P 原生无水印直链；
-  - **X / Instagram / Facebook / Pinterest**：本 Android 轻量分支尚未接入稳定专用解析；公开 HTML5 网页可尝试通用媒体提取。
+  - **X / Instagram / Facebook / Pinterest**：已接入 Lux 原生站点解析；X 的公开帖子还支持 FxEmbed 公共 API 回退（访问第三方 API 时发送公开帖子 ID），登录/私密内容未承诺支持。
 
 ### 2. 🎬 丰富的导出与转码模式
 - **音画合流 (MP4)**：自由挑选目标清晰度（4K、2K、1080P、720P），毫秒级无损合并音视频轨道。
