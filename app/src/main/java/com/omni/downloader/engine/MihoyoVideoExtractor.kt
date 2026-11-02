@@ -356,6 +356,8 @@ object MihoyoVideoExtractor {
             context, task, url, proxyUrl, stagingDir, publicDir, onProgressUpdate, headers
         )
         if (first.isSuccess || source.type != SourceType.POST) return@withContext first
+        // Cancellation is intentional: do not restart the task to refresh a URL.
+        if (first.exceptionOrNull()?.message.orEmpty().contains("取消")) return@withContext first
 
         // May be a 403 from a stale auth_key, or a link invalidated before its stated TTL.
         val freshUrl = refresh().getOrElse { return@withContext Result.failure(it) }
