@@ -10,7 +10,7 @@
 </p>
 
 [![Release](https://img.shields.io/github/v/release/baishu136/OmniDownloader?color=blue&label=Release)](https://github.com/baishu136/OmniDownloader/releases)
-[![Android](https://img.shields.io/badge/Android-v1.5.10-green.svg)](https://developer.android.com)
+[![Android](https://img.shields.io/badge/Android-v1.6.2--native--beta1-blue.svg)](https://developer.android.com)
 [![iOS](https://img.shields.io/badge/iOS-SwiftUI%20Native-orange.svg)](OmniDownloader-iOS)
 [![Windows](https://img.shields.io/badge/Windows-Desktop%20%26%20Web-blue.svg)](windows)
 [![License](https://img.shields.io/badge/License-MIT-orange.svg)](LICENSE)
@@ -19,13 +19,16 @@
 
 </div>
 
+> **Android v1.6.2 Native Beta 1 (this branch only):** Replaces mandatory Python/yt-dlp/FFmpeg with bundled aria2 + OkHttp, adds pause/resume and a conservative HTML5/OpenGraph/JSON-LD extractor. **Only some publicly available Miyoushe article videos are supported.** YouTube/X/Instagram/Facebook do not yet have dependable native adapters. HLS manifests and GIF/MP3/FLAC/OPUS transcoding are not included. Existing Windows/iOS and historical-version sections below do not imply Android beta feature parity.
+
+
 ---
 
 ## 🌟 Cross-Platform Overview
 
 | Platform | Target Devices | Core Tech Stack | Installation & Download |
 | :--- | :--- | :--- | :--- |
-| **🤖 Android Native** | Android Phones / Tablets / TV (Android 8.0+) | Kotlin + Jetpack Compose + yt-dlp + FFmpeg | [Download Latest APK (v1.5.10)](https://github.com/baishu136/OmniDownloader/releases/latest/download/OmniDownloader_LATEST.apk) or via Releases |
+| **🤖 Android Native** | Android Phones / Tablets / TV (Android 8.0+) | Kotlin + Jetpack Compose + aria2 + OkHttp + Android MediaMuxer | [Branch test APK (Actions)](https://github.com/Junyxor/OmniDownloader/actions/workflows/aria2-native-apk.yml) |
 | **🍎 iOS Native** | iPhone / iPad (iOS 15.0+) | Swift 5.9 + SwiftUI + AVFoundation hardware-accelerated muxing | Source code in [`OmniDownloader-iOS`](OmniDownloader-iOS); Free cloud build via GitHub Actions for TrollStore / AltStore sideloading |
 | **💻 Windows Desktop** | Windows 10 / 11 (64-bit) | Python 3 + FastAPI + Edge WebView2 standalone window + Built-in FFmpeg | Download [`windows/release/OmniDownloader_桌面独立版.zip`](windows/release/); Standalone portable app with multilingual guides |
 | **🌐 Web Background** | Windows PC, accessible by any browser across LAN | Lightweight system tray daemon + Local web service + Built-in FFmpeg | Download [`windows/release/OmniDownloader_网页纯后台版.zip`](windows/release/); Silent tray app with browser download takeover |
@@ -36,10 +39,10 @@
 
 1. **Native Platform Support**:
    - **Bilibili**: Full DASH stream muxing up to 4K / 1080P60, playlist batch downloading, SESSDATA authentication.
-   - **Short Video No-Watermark Extraction**: Direct official CDN streams from Douyin, Kuaishou, Xiaohongshu, and TikTok.
-   - **Global Platforms**: Full coverage of YouTube (4K/Shorts), X (Twitter), Instagram, and Facebook.
+   - **Short Video Extraction**: Native handlers for Douyin, Kuaishou, Xiaohongshu and TikTok; availability can change with platform restrictions. Also supports selected public Miyoushe article VOD and miHoYo Wiki pages.
+   - **Generic HTML5 Sites**: Tries direct media linked via HTML5 video tags, OpenGraph and JSON-LD. YouTube, X, Instagram and Facebook do **not** yet have reliable native adapters in this Android beta.
 2. **Flexible Export Modes**:
-   - Video + Audio (MP4), Video Only (Mute for remixing), High-fidelity Audio extraction (MP3 / M4A / FLAC), Animated GIF, and HD Cover art.
+   - Android native beta: MP4 remux, compatible M4A audio extraction and HD cover art; MP3/FLAC/OPUS transcoding and GIF conversion are not bundled.
 3. **Smart Collection Aggregation**:
    - Playlists and multi-video collections display with a weighted progress bar and expandable episode drawers.
 4. **Multilingual Support**:
