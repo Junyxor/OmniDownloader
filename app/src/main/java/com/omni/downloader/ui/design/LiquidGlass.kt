@@ -47,9 +47,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /**
- * Experimental, original Compose glass styling inspired by FlClash's visual language.
- * No FlClash Flutter/GLSL source is copied: this is a lightweight translucent/rim
- * treatment, NOT a backdrop-sampling or refractive shader.
+ * Native Compose glass appearance with lightweight translucent surfaces.
+ * This layer provides gradient illumination and an optional optical navigation lens.
+ * It does not perform per-card backdrop captures or full-frame blur.
  *
  * The backdrop is drawn once behind the scaffold. List cards only draw a translucent
  * fill and a gradient border, avoiding per-item blur layers during progress updates.
