@@ -5,6 +5,7 @@ import android.util.Log
 import com.omni.downloader.data.model.TaskStatus
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
@@ -29,6 +30,16 @@ object Aria2Downloader {
     fun resetCancellation(taskId: String) {
         cancelled.remove(taskId)
     }
+
+    fun isCancelled(taskId: String): Boolean = cancelled.contains(taskId)
+
+    private fun fingerprint(url: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(url.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+
+    private fun sanitized(message: String): String = message
+        .replace(Regex("""https?://[^\s)]+"""), "[media URL]")
+        .replace(Regex("""(?i)(?:auth_key|token|cookie|authorization)=[^\s&]+"""), "[redacted]")
 
     fun cancel(taskId: String) {
         cancelled.add(taskId)
@@ -59,15 +70,24 @@ object Aria2Downloader {
                 throw IOException("当前精简版 aria2 仅支持 HTTP(S) 代理；请在网络设置中使用 HTTP 代理")
             }
             destination.parentFile?.mkdirs()
+            // An old aria2 control file cannot be reused for a different signed CDN URL.
+            val sourceKey = File(destination.absolutePath + ".aria2source")
+            val key = fingerprint(url)
+            if (!sourceKey.exists() || sourceKey.readText() != key) {
+                destination.delete()
+                File(destination.absolutePath + ".aria2").delete()
+                sourceKey.writeText(key)
+            }
             val args = mutableListOf(
                 binary.absolutePath, "--no-conf=true", "--enable-color=false",
-                "--console-log-level=warn", "--summary-interval=1",
+                "--console-log-level=notice", "--summary-interval=1",
                 "--show-console-readout=true", "--file-allocation=none",
                 "--continue=true", "--auto-file-renaming=false", "--allow-overwrite=true",
                 "--max-concurrent-downloads=1", "--max-connection-per-server=8",
                 "--split=8", "--min-split-size=1M", "--max-tries=5",
                 "--retry-wait=2", "--connect-timeout=20", "--timeout=60",
                 "--check-certificate=true",
+                "--ca-certificate=${AndroidCaBundle.get(context).absolutePath}",
                 "--dir=${destination.parentFile!!.absolutePath}", "--out=${destination.name}"
             )
             val normalized = headers.entries.associate { it.key.lowercase() to it.value }
@@ -135,10 +155,11 @@ object Aria2Downloader {
             reader.join(1500)
             if (cancelled.contains(taskId)) throw IOException("任务已取消")
             if (exitCode != 0 || !destination.isFile || destination.length() == 0L) {
-                throw IOException("aria2 下载失败 (exit=$exitCode): ${log.toString().takeLast(400)}")
+                throw IOException("aria2 下载失败 (exit=$exitCode): ${sanitized(log.toString().takeLast(1500))}")
             }
             // Sidecars are needed for interrupted transfers, not successful ones.
             File(destination.absolutePath + ".aria2").delete()
+            File(destination.absolutePath + ".aria2source").delete()
             val elapsed = (System.nanoTime() - started) / 1.0e9
             Log.i(TAG, "Finished ${destination.name}: ${destination.length()} bytes in $elapsed s")
             onProgress(95f, "", "下载完成，校验媒体...", TaskStatus.PROCESSING)
@@ -146,7 +167,7 @@ object Aria2Downloader {
         } catch (e: Exception) {
             if (cancelled.contains(taskId)) Result.failure(IOException("任务已取消", e))
             else {
-                Log.w(TAG, "aria2 task failed: ${e.message}")
+                Log.w(TAG, "aria2 task failed: ${sanitized(e.message.orEmpty())}")
                 Result.failure(e)
             }
         } finally {
