@@ -117,7 +117,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedVideoFormat = MutableStateFlow<FormatOption?>(null)
     val selectedVideoFormat: StateFlow<FormatOption?> = _selectedVideoFormat.asStateFlow()
 
-    private val _selectedAudioFormat = MutableStateFlow(AudioFormat.MP3)
+    private val _selectedAudioFormat = MutableStateFlow(AudioFormat.M4A)
     val selectedAudioFormat: StateFlow<AudioFormat> = _selectedAudioFormat.asStateFlow()
 
     private val _isUpdatingEngine = MutableStateFlow(false)
@@ -160,11 +160,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _selectedMultiMediaIndex.value = index
         val sub = meta.multiMediaList[index]
         _selectedVideoFormat.value = sub.availableVideoFormats.firstOrNull()
-        if (sub.isGif) {
-            _selectedDownloadType.value = DownloadType.GIF
-        } else {
-            _selectedDownloadType.value = DownloadType.VIDEO_WITH_AUDIO
-        }
+        _selectedDownloadType.value = DownloadType.VIDEO_WITH_AUDIO
     }
 
     fun selectDownloadType(type: DownloadType) {
@@ -240,7 +236,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // 默认下载类型始终锁定为原画视频 (VIDEO_WITH_AUDIO)，
                 // 彻底杜绝普通视频或短动效在粘贴自动下载时被私自执行 GIF 转码
                 _selectedDownloadType.value = DownloadType.VIDEO_WITH_AUDIO
-                _selectedAudioFormat.value = AudioFormat.MP3
+                _selectedAudioFormat.value = AudioFormat.M4A
 
                 if (autoDownload && context != null) {
                     if (data.multiMediaList.size > 1) {
@@ -305,7 +301,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 thumbnailUrl = currentMeta.thumbnailUrl,
                 downloadType = DownloadType.COVER,
                 selectedResolution = "原图封面",
-                audioFormat = AudioFormat.MP3
+                audioFormat = AudioFormat.M4A
             )
             repository.addTask(coverTask)
             DownloadService.startDownload(context, coverTask.id)
@@ -341,7 +337,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             thumbnailUrl = thumbnailUrl,
             downloadType = DownloadType.VIDEO_WITH_AUDIO,
             selectedResolution = "中转直链",
-            audioFormat = AudioFormat.MP3
+            audioFormat = AudioFormat.M4A
         )
         repository.addTask(task)
         DownloadService.startDownload(context, task.id)
@@ -370,7 +366,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             thumbnailUrl = currentMeta.thumbnailUrl,
             downloadType = DownloadType.COVER,
             selectedResolution = "原图封面",
-            audioFormat = AudioFormat.MP3
+            audioFormat = AudioFormat.M4A
         )
 
         repository.addTask(task)
@@ -424,8 +420,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         targetList.forEachIndexed { index, sub ->
             val finalType = if (type == DownloadType.COVER) {
                 DownloadType.COVER
-            } else if (sub.isGif) {
-                DownloadType.GIF
             } else {
                 type
             }
@@ -457,7 +451,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     thumbnailUrl = sub.thumbnailUrl,
                     downloadType = DownloadType.COVER,
                     selectedResolution = "原图封面",
-                    audioFormat = AudioFormat.MP3
+                    audioFormat = AudioFormat.M4A
                 )
                 tasksToAdd.add(coverTask)
             }
