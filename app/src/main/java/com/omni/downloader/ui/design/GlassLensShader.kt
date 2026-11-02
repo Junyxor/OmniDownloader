@@ -10,7 +10,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ShaderBrush
+import android.graphics.Paint
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 
 /**
@@ -21,8 +25,8 @@ import androidx.compose.ui.graphics.toArgb
  * - three-channel chromatic splitting close to the bevel;
  * - a narrow, direction-dependent specular rim.
  *
- * Unlike FlClash's full-frame backdrop capture this samples a local ambient shader,
- * NOT the live page below the dock. That design choice keeps offscreen reads and
+ * This samples a local ambient shader, not the live page below the dock.
+ * That design choice keeps offscreen reads and
  * download-progress frame costs at zero, on the current Compose 1.6 toolchain.
  *
  * The RuntimeShader and input gradient are cached with drawWithCache, so selecting
@@ -33,7 +37,10 @@ import androidx.compose.ui.graphics.toArgb
 internal fun opticalGlassLensModifier(dark: Boolean): Modifier {
     val runtimeShader = remember(dark) {
         runCatching { RuntimeShader(LENS_AGSL) }.getOrNull()
-    } ?: return Modifier
+    } ?: return Modifier.background(
+        Brush.verticalGradient(if (dark) listOf(Color(0x806D84B6), Color(0x573C496B))
+                               else listOf(Color(0xE9FFFFFF), Color(0x9CC9DDF6)))
+    )
 
     return Modifier.drawWithCache {
         val width = size.width.coerceAtLeast(1f)
@@ -51,13 +58,15 @@ internal fun opticalGlassLensModifier(dark: Boolean): Modifier {
         runtimeShader.setInputShader("ambient", gradient)
         runtimeShader.setFloatUniform("size", width, height)
         runtimeShader.setFloatUniform("darkness", if (dark) 1f else 0f)
-        val brush = ShaderBrush(runtimeShader)
-        onDrawBehind { drawRect(brush) }
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = runtimeShader }
+        onDrawBehind {
+            drawIntoCanvas { canvas -> canvas.nativeCanvas.drawRect(0f, 0f, width, height, paint) }
+        }
     }
 }
 
 /**
- * Original AGSL, without FlClash's GPL-3 shader code.
+ * Local AGSL implementation with a bounded optical edge profile.
  * Three ambient.eval() taps are the only texture samples per pixel.
  * No unbounded loops or high-radius Gaussian kernels.
  */
