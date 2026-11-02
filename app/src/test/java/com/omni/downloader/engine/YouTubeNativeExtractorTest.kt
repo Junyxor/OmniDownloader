@@ -99,4 +99,39 @@ class YouTubeNativeExtractorTest {
         assertTrue(YouTubeNativeExtractor.parsePlayer(json, id).isFailure)
     }
 
+    @Test fun mergesMultipleYtcfgFragmentsAndKeepsActualLocale() {
+        val html = """
+            <script>ytcfg.set({"INNERTUBE_API_KEY":"key-one",
+              "INNERTUBE_CONTEXT":{"client":{"clientName":"WEB","clientVersion":"2.20261103.00",
+                "hl":"zh-CN","gl":"HK"}}});</script>
+            <script>ytcfg.set({"INNERTUBE_CLIENT_VERSION":"2.20261103.00",
+                "VISITOR_DATA":"visitor-one","STS":20456});</script>
+        """.trimIndent()
+        val cfg = YouTubeNativeExtractor.playerConfigFromHtml(html)
+        assertEquals("key-one", cfg.getString("INNERTUBE_API_KEY"))
+        assertEquals("2.20261103.00", cfg.getString("INNERTUBE_CLIENT_VERSION"))
+        assertEquals("visitor-one", cfg.getString("VISITOR_DATA"))
+        assertEquals(20456, cfg.getInt("STS"))
+        assertEquals("HK", cfg.getJSONObject("INNERTUBE_CONTEXT")
+            .getJSONObject("client").getString("gl"))
+    }
+
+    @Test fun restrictedWatchPlayerIsNotEvidenceOfDeletedVideo() {
+        val body = """
+            {"playabilityStatus":{"status":"UNPLAYABLE","reason":"Video unavailable"},
+              "videoDetails":{"videoId":"gjUzH4UcSkw"}}
+        """.trimIndent()
+        // This response is an invalid *client playback response*. The
+        // extractor must be able to try other official client contexts.
+        val parsed = YouTubeNativeExtractor.parsePlayer(body, "gjUzH4UcSkw")
+        assertTrue(parsed.isFailure)
+        assertTrue(parsed.exceptionOrNull()?.message.orEmpty().contains("Video unavailable"))
+        assertEquals(
+            "https://www.youtube.com/watch?v=gjUzH4UcSkw",
+            YouTubeNativeExtractor.canonicalWatchUrl(
+                "https://m.youtube.com/watch?v=gjUzH4UcSkw&pp=ugUHEgV6aC1DTg%3D%3D"
+            )
+        )
+    }
+
 }

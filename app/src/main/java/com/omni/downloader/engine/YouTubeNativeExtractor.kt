@@ -241,13 +241,138 @@ object YouTubeNativeExtractor {
         return b.build()
     }
 
+
+    /** YouTube can emit multiple page configuration fragments. */
+    internal fun playerConfigFromHtml(html: String): JSONObject {
+        val merged = JSONObject()
+        var offset = 0
+        var blocks = 0
+        while (blocks++ < 32) {
+            val at = html.indexOf("ytcfg.set(", offset)
+            if (at < 0) break
+            offset = at + "ytcfg.set(".length
+            val chunk = jsonAfter(html.substring(at), "ytcfg.set(") ?: continue
+            val obj = runCatching { JSONObject(chunk) }.getOrNull() ?: continue
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                merged.put(key, obj.get(key))
+            }
+        }
+        return merged
+    }
+
+    private data class PlayerClient(
+        val name: String,
+        val number: Int,
+        val version: String,
+        val userAgent: String = UA,
+        val cookies: Boolean = true,
+        val embedded: Boolean = false
+    )
+
+    private fun requestPlayer(
+        http: OkHttpClient,
+        config: JSONObject,
+        key: String,
+        id: String,
+        canonical: String,
+        spec: PlayerClient,
+        cookieString: String
+    ): String {
+        // Start with the actual page context. Do not force a US location.
+        val original = config.optJSONObject("INNERTUBE_CONTEXT")
+        val context = if (original == null) JSONObject()
+            else JSONObject(original.toString())
+        val clientInfo = context.optJSONObject("client") ?: JSONObject()
+        clientInfo.put("clientName", spec.name)
+        clientInfo.put("clientVersion", spec.version)
+        if (spec.userAgent != UA) clientInfo.put("userAgent", spec.userAgent)
+        config.optString("VISITOR_DATA").takeIf { it.isNotBlank() }?.let {
+            clientInfo.put("visitorData", it)
+        }
+        if (spec.name == "IOS") {
+            clientInfo.put("osName", "iOS")
+            clientInfo.put("osVersion", "18.3.2.22D82")
+            clientInfo.put("deviceMake", "Apple")
+            clientInfo.put("deviceModel", "iPhone16,2")
+            clientInfo.remove("androidSdkVersion")
+            clientInfo.remove("browserName")
+            clientInfo.remove("browserVersion")
+        }
+        context.put("client", clientInfo)
+        if (spec.embedded) {
+            context.put("thirdParty", JSONObject()
+                .put("embedUrl", "https://www.youtube.com/embed/$id"))
+        } else {
+            context.remove("thirdParty")
+        }
+        val payload = JSONObject()
+            .put("videoId", id)
+            .put("context", context)
+            .put("contentCheckOk", true)
+            .put("racyCheckOk", true)
+        val sts = config.optInt("STS")
+        if (sts > 0) {
+            payload.put("playbackContext", JSONObject()
+                .put("contentPlaybackContext", JSONObject()
+                    .put("signatureTimestamp", sts)))
+        }
+        val request = Request.Builder()
+            .url("https://www.youtube.com/youtubei/v1/player?key=$key")
+            .header("User-Agent", spec.userAgent)
+            .header("Origin", "https://www.youtube.com")
+            .header("Referer", if (spec.embedded)
+                "https://www.youtube.com/embed/$id" else canonical)
+            .header("X-Youtube-Client-Name", spec.number.toString())
+            .header("X-Youtube-Client-Version", spec.version)
+            .apply {
+                if (spec.cookies && cookieString.isNotBlank())
+                    header("Cookie", cookieString)
+            }
+            .post(payload.toString().toRequestBody(
+                "application/json; charset=utf-8".toMediaType()))
+            .build()
+        return http.newCall(request).execute().use { response ->
+            if (!response.isSuccessful)
+                throw IOException("播放器接口 HTTP ${response.code}")
+            val responseBody = response.body ?: throw IOException("播放器接口响应为空")
+            if (responseBody.contentLength() > 2L * 1024 * 1024)
+                throw IOException("播放器接口返回过大")
+            responseBody.charStream().use { it.readText().take(2 * 1024 * 1024) }
+        }
+    }
+
+    /**
+     * Validate CDN byte availability before exposing a format as downloadable.
+     * A metadata-only "OK" status does not establish that transfer works.
+     */
+    private fun filterVerifiedFormats(
+        meta: VideoMetadata,
+        proxy: String
+    ): Result<VideoMetadata> = runCatching {
+        val validAudio = meta.availableAudioFormats.take(2).filter {
+            verifyMediaRange(it.formatId, proxy).isSuccess
+        }
+        val validVideo = meta.availableVideoFormats.take(8).filter { format ->
+            (!format.isVideoOnly || validAudio.isNotEmpty()) &&
+                verifyMediaRange(format.formatId, proxy).isSuccess
+        }
+        if (validVideo.isEmpty() && validAudio.isEmpty())
+            throw IOException("播放器返回流信息，但 CDN 没有可访问的音视频资源")
+        meta.copy(
+            availableVideoFormats = validVideo,
+            availableAudioFormats = validAudio
+        )
+    }
+
     suspend fun extract(url: String, proxy: String = ""): Result<VideoMetadata> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val canonical = canonicalWatchUrl(url)
-                    ?: throw IOException("不是 YouTube 视频或 Shorts 链接")
+                    ?: throw IOException("不是有效的 YouTube 视频链接")
                 val id = videoId(canonical)
-                    ?: throw IOException("YouTube 视频 ID 无效")
+                    ?: throw IOException("YouTube 视频 ID 不合法")
                 val http = client(proxy)
                 val cookies = runCatching {
                     CookieManager.getInstance().getCookie("https://www.youtube.com/")
@@ -255,49 +380,79 @@ object YouTubeNativeExtractor {
                 val request = Request.Builder().url(canonical)
                     .header("User-Agent", UA)
                     .header("Accept-Language", "en-US,en;q=0.9")
-                    .apply { if (cookies.isNotBlank()) header("Cookie", cookies) }
+                    .apply {
+                        if (cookies.isNotBlank()) header("Cookie", cookies)
+                    }
                     .build()
                 val html = http.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) throw IOException("YouTube 网页 HTTP " + response.code)
-                    val body = response.body ?: throw IOException("YouTube 网页无响应")
-                    if (body.contentLength() > 3 * 1024 * 1024)
-                        throw IOException("YouTube 页面超过 3 MB 上限")
-                    body.charStream().use { it.readText().take(3 * 1024 * 1024) }
+                    if (!response.isSuccessful)
+                        throw IOException("YouTube 网页 HTTP ${response.code}")
+                    val responseBody = response.body
+                        ?: throw IOException("YouTube 网页响应为空")
+                    if (responseBody.contentLength() > 3L * 1024 * 1024)
+                        throw IOException("YouTube 网页超出 3 MB 限制")
+                    responseBody.charStream().use { it.readText().take(3 * 1024 * 1024) }
                 }
+                val errors = mutableListOf<String>()
+                fun tryResponse(clientLabel: String, json: String): VideoMetadata? {
+                    val parsed = parsePlayer(json, id)
+                    if (parsed.isFailure) {
+                        errors += "$clientLabel: " +
+                            parsed.exceptionOrNull()?.message.orEmpty()
+                        return null
+                    }
+                    val filtered = filterVerifiedFormats(parsed.getOrThrow(), proxy)
+                    if (filtered.isSuccess) return filtered.getOrThrow()
+                    errors += "$clientLabel: " +
+                        filtered.exceptionOrNull()?.message.orEmpty()
+                    return null
+                }
+
                 val initial = jsonAfter(html, "ytInitialPlayerResponse")
-                if (initial != null) {
-                    val parsed = parsePlayer(initial, id)
-                    if (parsed.isSuccess) return@runCatching parsed.getOrThrow()
+                if (initial != null)
+                    tryResponse("网页初始播放器", initial)?.let { return@runCatching it }
+
+                val config = playerConfigFromHtml(html)
+                val apiKey = config.optString("INNERTUBE_API_KEY")
+                val contextClient = config.optJSONObject("INNERTUBE_CONTEXT")
+                    ?.optJSONObject("client")
+                val webVersion = config.optString("INNERTUBE_CLIENT_VERSION")
+                    .ifBlank { contextClient?.optString("clientVersion").orEmpty() }
+                if (apiKey.isBlank() || webVersion.isBlank()) {
+                    throw IOException("YouTube 页面缺少播放器配置；" +
+                        errors.joinToString("；").take(250))
                 }
-                // Read the current first-party Innertube key/version from HTML
-                // instead of packaging an external extractor or stale API key.
-                val cfg = jsonAfter(html, "ytcfg.set(")?.let(::JSONObject)
-                    ?: throw IOException("YouTube 网页没有提供播放器配置")
-                val key = cfg.optString("INNERTUBE_API_KEY")
-                val version = cfg.optString("INNERTUBE_CLIENT_VERSION")
-                if (key.isBlank() || version.isBlank())
-                    throw IOException("YouTube 网页缺少客户端参数")
-                val info = JSONObject().put("clientName", "WEB")
-                    .put("clientVersion", version).put("hl", "en").put("gl", "US")
-                cfg.optString("VISITOR_DATA").takeIf { it.isNotBlank() }
-                    ?.let { info.put("visitorData", it) }
-                val payload = JSONObject().put("videoId", id)
-                    .put("context", JSONObject().put("client", info))
-                val api = Request.Builder()
-                    .url("https://www.youtube.com/youtubei/v1/player?key=$key")
-                    .header("User-Agent", UA)
-                    .header("Origin", "https://www.youtube.com")
-                    .header("Referer", canonical)
-                    .header("X-Youtube-Client-Name", "1")
-                    .header("X-Youtube-Client-Version", version)
-                    .apply { if (cookies.isNotBlank()) header("Cookie", cookies) }
-                    .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
-                    .build()
-                val body = http.newCall(api).execute().use { response ->
-                    if (!response.isSuccessful) throw IOException("YouTube 播放接口 HTTP " + response.code)
-                    response.body?.string() ?: throw IOException("YouTube 播放接口响应为空")
+                // A non-playable WEB response does not prove the video is gone.
+                // Try the embedded context and a mobile first-party client.
+                // These may still require PO tokens; accepted streams must
+                // pass an actual CDN probe, not just a JSON metadata check.
+                val clients = listOf(
+                    PlayerClient("WEB", 1, webVersion),
+                    PlayerClient("WEB_EMBEDDED_PLAYER", 56, webVersion, embedded = true),
+                    PlayerClient(
+                        "IOS", 5, "21.26.4",
+                        userAgent = "com.google.ios.youtube/21.26.4 " +
+                            "(iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+                        cookies = false
+                    )
+                )
+                for (spec in clients) {
+                    val result = runCatching {
+                        requestPlayer(http, config, apiKey, id, canonical, spec, cookies)
+                    }
+                    if (result.isFailure) {
+                        errors += "${spec.name}: " +
+                            result.exceptionOrNull()?.message.orEmpty()
+                        continue
+                    }
+                    tryResponse(spec.name, result.getOrThrow())
+                        ?.let { return@runCatching it }
                 }
-                parsePlayer(body, id).getOrThrow()
+                throw IOException(
+                    "YouTube 网页及备用客户端都未取得可验证的媒体流。" +
+                        errors.takeLast(4).joinToString("；").take(420) +
+                        "；可能涉及地区/登录、PO Token 或签名限制"
+                )
             }
         }
 
