@@ -49,8 +49,9 @@ object UrlSniffer {
         val mihoyoSource = MihoyoVideoExtractor.parseSource(url)
         return when {
             mihoyoSource != null -> if (mihoyoSource.type == MihoyoVideoExtractor.SourceType.WIKI) "米哈游百科" else "米游社"
-            lower.contains("bilibili.com") || lower.contains("b23.tv") || lower.startsWith("bv") || lower.startsWith("av") || BilibiliDirectExtractor.extractBvid(url) != null -> "哔哩哔哩"
-            lower.contains("youtube.com") || lower.contains("youtu.be") -> "YouTube"
+            YouTubeNativeExtractor.isYouTubeHost(url) -> "YouTube"
+            lower.contains("bilibili.com") || lower.contains("b23.tv") ||
+                (!url.contains("://") && BilibiliDirectExtractor.extractBvid(url) != null) -> "哔哩哔哩"
             lower.contains("twitter.com") || lower.contains("x.com") -> "X (Twitter)"
             lower.contains("tiktok.com") -> "TikTok"
             lower.contains("douyin.com") || lower.contains("iesdouyin.com") -> "抖音"
@@ -70,8 +71,19 @@ object UrlSniffer {
         var cleanUrl = rawUrl.trim()
         if (cleanUrl.isEmpty()) return@withContext ""
 
-        // 若用户直接输入或粘贴了纯 BV 号或 av 号
-        val directBvid = BilibiliDirectExtractor.extractBvid(cleanUrl)
+        // Canonicalize genuine YouTube watch/Shorts/live/share URLs BEFORE
+        // any generic platform identification or Bilibili ID probing.
+        // m.youtube.com/watch?v=ID&pp=... and youtube.com/watch?v=ID
+        // must resolve to the same network request, without tracking params.
+        YouTubeNativeExtractor.canonicalWatchUrl(cleanUrl)?.let {
+            return@withContext it
+        }
+
+        // Only a bare BV/av ID is eligible for Bilibili shorthand expansion.
+        // Searching within arbitrary URLs can misidentify video IDs in query strings.
+        val directBvid = if (!cleanUrl.contains("://") &&
+            cleanUrl.matches(Regex("""(?i)(?:BV[a-zA-Z0-9]{10}|av\d+)""")))
+            BilibiliDirectExtractor.extractBvid(cleanUrl) else null
         if (directBvid != null && !cleanUrl.contains("bilibili.com") && !cleanUrl.contains("b23.tv")) {
             cleanUrl = "https://www.bilibili.com/video/$directBvid"
         }

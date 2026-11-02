@@ -44,9 +44,24 @@ object YouTubeNativeExtractor {
     }
 
 
+    /** Only exact YouTube hosts are trusted; a query or subdomain suffix is not enough. */
+    internal fun isYouTubeHost(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        if (uri.scheme !in setOf("https", "http") || uri.userInfo != null) return false
+        val host = uri.host?.lowercase()?.removePrefix("www.") ?: return false
+        return host in setOf(
+            "youtube.com", "m.youtube.com", "music.youtube.com",
+            "youtube-nocookie.com", "youtu.be"
+        )
+    }
+
+    /** Discard share/tracking params, preserving only the requested video ID. */
+    internal fun canonicalWatchUrl(url: String): String? =
+        videoId(url)?.let { "https://www.youtube.com/watch?v=$it" }
+
     internal fun videoId(url: String): String? {
         val uri = runCatching { URI(url) }.getOrNull() ?: return null
-        if (uri.scheme !in setOf("https", "http")) return null
+        if (!isYouTubeHost(url)) return null
         val host = uri.host?.lowercase()?.removePrefix("www.") ?: return null
         val path = uri.path.orEmpty().trim('/')
         val id = when {
@@ -229,8 +244,10 @@ object YouTubeNativeExtractor {
     suspend fun extract(url: String, proxy: String = ""): Result<VideoMetadata> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val id = videoId(url) ?: throw IOException("不是 YouTube 视频或 Shorts 链接")
-                val canonical = "https://www.youtube.com/watch?v=$id"
+                val canonical = canonicalWatchUrl(url)
+                    ?: throw IOException("不是 YouTube 视频或 Shorts 链接")
+                val id = videoId(canonical)
+                    ?: throw IOException("YouTube 视频 ID 无效")
                 val http = client(proxy)
                 val cookies = runCatching {
                     CookieManager.getInstance().getCookie("https://www.youtube.com/")
