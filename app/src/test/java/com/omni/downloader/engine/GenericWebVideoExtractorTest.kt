@@ -16,7 +16,7 @@ class GenericWebVideoExtractorTest {
         """.trimIndent()
         val metadata = GenericWebVideoExtractor.parseHtml(html, "https://video.example.org/watch/123")
         assertNotNull(metadata)
-        assertEquals("Demo clip", metadata!!.title)
+        assertEquals("Demo clip · 媒体 1", metadata!!.title)
         assertEquals(2, metadata.multiMediaList.size)
         assertEquals("https://cdn.example.org/real.mp4",
             metadata.multiMediaList[0].availableVideoFormats[0].formatId)
