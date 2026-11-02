@@ -242,10 +242,10 @@ fun SettingsScreen(
                                     else -> "液态玻璃（预览）"
                                 },
                                 description = when (appLanguage) {
-                                    "en" -> "Lightweight translucent cards and a floating dock. No blur per list item."
-                                    "ja" -> "軽量な半透明カードとフローティングナビゲーション"
-                                    "zh-TW" -> "輕量半透明卡片與懸浮導航，列表不做逐項模糊"
-                                    else -> "轻量半透明卡片与悬浮导航，列表不做逐项模糊"
+                                    "en" -> "Live dock backdrop blur and glass controls. No per-item list blur."
+                                    "ja" -> "ドック背景のリアルタイムぼかしとガラス調ボタン"
+                                    "zh-TW" -> "懸浮導航真實背景模糊與玻璃按鈕，列表不逐項模糊"
+                                    else -> "悬浮导航真实背景模糊与玻璃按钮，列表不逐项模糊"
                                 }
                             ) {
                                 Switch(checked = glassEnabled, onCheckedChange = viewModel::setGlassEnabled)
