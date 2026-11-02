@@ -235,13 +235,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _selectedVideoFormat.value = activeMeta.availableVideoFormats.firstOrNull()
                 // 默认下载类型始终锁定为原画视频 (VIDEO_WITH_AUDIO)，
                 // 彻底杜绝普通视频或短动效在粘贴自动下载时被私自执行 GIF 转码
-                _selectedDownloadType.value = DownloadType.VIDEO_WITH_AUDIO
+                _selectedDownloadType.value = if (data.siteName == "图文") DownloadType.COVER
+                    else DownloadType.VIDEO_WITH_AUDIO
                 _selectedAudioFormat.value = AudioFormat.M4A
 
                 if (autoDownload && context != null) {
                     if (data.multiMediaList.size > 1) {
                         // 发现链接是合集/多视频时，不直接下载，而是先弹出下载选项由用户自己决定如何下载
-                        _message.value = "检测到合集内容(共${data.multiMediaList.size}个视频)，请选择下载选项"
+                        _message.value = "检测到多媒体作品(共${data.multiMediaList.size}项)，请选择下载选项"
                         _showFormatSheet.value = true
                     } else {
                         startDownload(context)
