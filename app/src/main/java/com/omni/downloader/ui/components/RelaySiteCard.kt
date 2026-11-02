@@ -50,6 +50,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.omni.downloader.data.model.RelaySite
+import com.omni.downloader.ui.design.LocalGlassEnabled
+import com.omni.downloader.ui.design.glassPanelColor
+import com.omni.downloader.ui.design.glassRimBrush
+import com.omni.downloader.ui.design.isDarkGlass
 import java.util.Locale
 
 /**
@@ -113,8 +117,8 @@ fun RelaySiteCard(
                 if (isResolving) onCancelResolve() else onStartResolve(site)
             },
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(if (isResolving) 1.4.dp else 1.dp, borderColor),
+        color = if (LocalGlassEnabled.current) glassPanelColor(isDarkGlass()) else MaterialTheme.colorScheme.surface,
+        border = if (LocalGlassEnabled.current) BorderStroke(1.dp, glassRimBrush(isDarkGlass())) else BorderStroke(if (isResolving) 1.4.dp else 1.dp, borderColor),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
