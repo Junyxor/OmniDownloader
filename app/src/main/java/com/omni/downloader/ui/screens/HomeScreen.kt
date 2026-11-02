@@ -149,7 +149,7 @@ fun HomeScreen(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = if (com.omni.downloader.ui.design.LocalGlassEnabled.current) 112.dp else 28.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item(key = "home_hero", contentType = "hero") {
