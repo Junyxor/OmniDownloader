@@ -459,13 +459,7 @@ fun FormatSelectorSheet(
                     isSelected = selectedType == DownloadType.AUDIO_ONLY,
                     onClick = { onSelectType(DownloadType.AUDIO_ONLY) }
                 )
-                ModeTabChip(
-                    modifier = Modifier.weight(1f),
-                    title = strings.tabGif,
-                    icon = Icons.Outlined.Gif,
-                    isSelected = selectedType == DownloadType.GIF,
-                    onClick = { onSelectType(DownloadType.GIF) }
-                )
+                // Video-to-GIF transcoding is not bundled in the slim native edition.
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -520,7 +514,7 @@ fun FormatSelectorSheet(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AudioFormat.values().forEach { audio ->
+                        listOf(AudioFormat.M4A).forEach { audio ->
                             AudioFormatRowItem(
                                 audio = audio,
                                 isSelected = selectedAudioFormat == audio,
