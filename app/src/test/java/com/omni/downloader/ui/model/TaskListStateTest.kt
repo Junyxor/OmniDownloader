@@ -22,6 +22,14 @@ class TaskListStateTest {
         assertTrue(state.hasClearableTasks.all { it })
     }
 
+    @Test fun pausedDownloadRemainsVisibleInActiveTab() {
+        val paused = task("paused", TaskStatus.PAUSED)
+        val state = buildTaskListState(listOf(paused))
+        assertEquals(1, state.pages[0].size)
+        assertEquals(1, state.pages[1].size)
+        assertTrue(state.pages[2].isEmpty())
+    }
+
     @Test fun emptyAndFailedCollectionsHaveCorrectFilters() {
         assertTrue(buildTaskListState(emptyList()).pages.all { it.isEmpty() })
         val state = buildTaskListState(listOf(task("a", TaskStatus.FAILED, "c"), task("b", collection = "c")))
