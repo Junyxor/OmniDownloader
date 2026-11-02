@@ -292,10 +292,19 @@ object YouTubeNativeExtractor {
             clientInfo.put("visitorData", it)
         }
         if (spec.name == "IOS") {
-            clientInfo.put("osName", "iOS")
+            clientInfo.put("osName", "iPhone")
             clientInfo.put("osVersion", "18.3.2.22D82")
             clientInfo.put("deviceMake", "Apple")
             clientInfo.put("deviceModel", "iPhone16,2")
+            clientInfo.remove("androidSdkVersion")
+            clientInfo.remove("browserName")
+            clientInfo.remove("browserVersion")
+        }
+        if (spec.name == "TVHTML5") {
+            clientInfo.remove("osName")
+            clientInfo.remove("osVersion")
+            clientInfo.remove("deviceMake")
+            clientInfo.remove("deviceModel")
             clientInfo.remove("androidSdkVersion")
             clientInfo.remove("browserName")
             clientInfo.remove("browserVersion")
@@ -351,18 +360,29 @@ object YouTubeNativeExtractor {
         meta: VideoMetadata,
         proxy: String
     ): Result<VideoMetadata> = runCatching {
-        val validAudio = meta.availableAudioFormats.take(2).filter {
-            verifyMediaRange(it.formatId, proxy).isSuccess
+        val audio = mutableListOf<FormatOption>()
+        for (option in meta.availableAudioFormats.take(2)) {
+            if (verifyMediaRange(option.formatId, proxy).isSuccess) {
+                audio += option
+                break
+            }
         }
-        val validVideo = meta.availableVideoFormats.take(8).filter { format ->
-            (!format.isVideoOnly || validAudio.isNotEmpty()) &&
-                verifyMediaRange(format.formatId, proxy).isSuccess
+        val video = mutableListOf<FormatOption>()
+        // Probe at most six candidates; two verified quality levels are
+        // sufficient to show a usable choice without hammering the CDN.
+        for (option in meta.availableVideoFormats.take(6)) {
+            if (option.isVideoOnly && audio.isEmpty()) continue
+            if (verifyMediaRange(option.formatId, proxy).isSuccess) {
+                video += option
+                if (video.size >= 2) break
+            }
         }
-        if (validVideo.isEmpty() && validAudio.isEmpty())
-            throw IOException("播放器返回流信息，但 CDN 没有可访问的音视频资源")
+        if (video.isEmpty() && audio.isEmpty()) {
+            throw IOException("播放器给出了流信息，但 CDN 未提供可读取的媒体字节")
+        }
         meta.copy(
-            availableVideoFormats = validVideo,
-            availableAudioFormats = validAudio
+            availableVideoFormats = video,
+            availableAudioFormats = audio
         )
     }
 
@@ -428,7 +448,19 @@ object YouTubeNativeExtractor {
                 // pass an actual CDN probe, not just a JSON metadata check.
                 val clients = listOf(
                     PlayerClient("WEB", 1, webVersion),
-                    PlayerClient("WEB_EMBEDDED_PLAYER", 56, webVersion, embedded = true),
+                    PlayerClient(
+                        "WEB_EMBEDDED_PLAYER", 56, webVersion,
+                        userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+                            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 " +
+                            "Safari/605.1.15,gzip(gfe)",
+                        embedded = true
+                    ),
+                    PlayerClient(
+                        "TVHTML5", 7, "7.20260707.07.00",
+                        userAgent = "Mozilla/5.0 (ChromiumStylePlatform) " +
+                            "Cobalt/25.lts.30.1034943-gold (unlike Gecko), " +
+                            "Unknown_TV_Unknown_0/Unknown"
+                    ),
                     PlayerClient(
                         "IOS", 5, "21.26.4",
                         userAgent = "com.google.ios.youtube/21.26.4 " +
@@ -470,7 +502,9 @@ object YouTubeNativeExtractor {
             .header("Range", "bytes=0-1023")
             .header("Accept-Encoding", "identity")
             .build()
-        client(proxy).newCall(req).execute().use { response ->
+        val probeClient = client(proxy).newBuilder()
+            .callTimeout(10, TimeUnit.SECONDS).build()
+        probeClient.newCall(req).execute().use { response ->
             when (response.code) {
                 200, 206 -> {
                     val contentType = response.header("Content-Type").orEmpty().lowercase()
@@ -479,7 +513,9 @@ object YouTubeNativeExtractor {
                         contentType.contains("text/plain")) {
                         throw IOException("YouTube CDN 返回错误页面而非媒体数据")
                     }
-                    if (response.body == null) throw IOException("YouTube CDN 没有返回媒体数据")
+                    val body = response.body ?: throw IOException("YouTube CDN 没有返回媒体数据")
+                    if (body.byteStream().read() < 0)
+                        throw IOException("YouTube CDN 返回了空媒体数据")
                 }
                 403 -> throw IOException(
                     "YouTube CDN HTTP 403：可能需要 PO Token、JS 签名、授权或者当前网络出口受到限制"
