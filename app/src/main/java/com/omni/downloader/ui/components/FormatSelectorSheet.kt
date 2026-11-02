@@ -66,6 +66,7 @@ fun FormatSelectorSheet(
 ) {
     val strings = com.omni.downloader.ui.localization.LocalAppStrings.current
     val isMultiVideo = metadata.multiMediaList.size > 1
+    val isImagePost = metadata.siteName == "图文"
     var isCollectionMode by remember { mutableStateOf(false) }
     var selectedEpisodes by remember(metadata) { mutableStateOf(metadata.multiMediaList.indices.toSet()) }
     var saveCoverWithDownload by remember { mutableStateOf(false) }
@@ -98,7 +99,7 @@ fun FormatSelectorSheet(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (currentMedia.thumbnailUrl.isNotEmpty()) {
+                if (currentMedia.thumbnailUrl.isNotEmpty() && !isImagePost) {
                     Box(
                         modifier = Modifier
                             .size(width = 110.dp, height = 66.dp)
@@ -434,6 +435,13 @@ fun FormatSelectorSheet(
             }
             Spacer(modifier = Modifier.height(10.dp))
 
+            if (isImagePost) {
+                Text(
+                    text = "图文作品：可选择单张下载，或使用合集模式批量下载原图。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -557,6 +565,7 @@ fun FormatSelectorSheet(
                 }
                 else -> {}
             }
+            } // Image posts do not have video/audio modes.
 
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -579,7 +588,7 @@ fun FormatSelectorSheet(
                         val count = selectedEpisodes.size
                         val resLabel = selectedVideoFormat?.resolutionLabel ?: ""
                         val coverSuffix = if (saveCoverWithDownload) " + ${strings.badgeCover}" else ""
-                        val batchBtnText = when (selectedType) {
+                        val batchBtnText = if (isImagePost) "下载选中 " + count + " 张原图" else when (selectedType) {
                             DownloadType.AUDIO_ONLY -> String.format(strings.batchDownloadAudio, count, selectedAudioFormat.ext.uppercase()) + coverSuffix
                             DownloadType.GIF -> String.format(strings.batchDownloadGif, count) + coverSuffix
                             else -> String.format(strings.batchDownloadVideos, count, resLabel) + coverSuffix
@@ -620,14 +629,14 @@ fun FormatSelectorSheet(
                             Icon(imageVector = Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = String.format(strings.downloadAllCount, metadata.multiMediaList.size) + coverSuffix,
+                                text = if (isImagePost) "下载全部 " + metadata.multiMediaList.size + " 张原图" else String.format(strings.downloadAllCount, metadata.multiMediaList.size) + coverSuffix,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
                     } else {
                         Button(
-                            onClick = { onConfirmDownload(saveCoverWithDownload) },
+                            onClick = { onConfirmDownload(if (isImagePost) false else saveCoverWithDownload) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(48.dp),
@@ -642,7 +651,7 @@ fun FormatSelectorSheet(
                                 "P$pNum · "
                             } else ""
                             val coverSuffix = if (saveCoverWithDownload) " + ${strings.badgeCover}" else ""
-                            val buttonText = when (selectedType) {
+                            val buttonText = if (isImagePost) "下载原图" else when (selectedType) {
                                 DownloadType.VIDEO_WITH_AUDIO -> "${strings.startDownload} ($currentEpLabel$resLabel$coverSuffix)"
                                 DownloadType.VIDEO_ONLY -> "${strings.tabMute} ($currentEpLabel$resLabel$coverSuffix)"
                                 DownloadType.AUDIO_ONLY -> "${strings.tabAudio} ($currentEpLabel${selectedAudioFormat.ext.uppercase()}$coverSuffix)"
