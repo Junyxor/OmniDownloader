@@ -48,7 +48,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val activeTasks: StateFlow<List<DownloadTask>> = repository.taskStructure
         .map { list ->
             list.filter {
-                it.status == TaskStatus.DOWNLOADING || it.status == TaskStatus.PROCESSING || it.status == TaskStatus.PENDING
+                it.status == TaskStatus.DOWNLOADING || it.status == TaskStatus.PROCESSING || it.status == TaskStatus.PENDING || it.status == TaskStatus.PAUSED
             }
         }
         .flowOn(Dispatchers.Default)
@@ -571,6 +571,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 it.status == TaskStatus.DOWNLOADING ||
                 it.status == TaskStatus.PROCESSING ||
                 it.status == TaskStatus.PENDING ||
+                it.status == TaskStatus.PAUSED ||
                 it.status == TaskStatus.FAILED ||
                 it.status == TaskStatus.CANCELLED
             }
@@ -594,7 +595,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             // 3. 清理缓存目录中的 staging 临时目录
             try {
-                val stagingDir = File(context.cacheDir, "staging")
+                val stagingDir = File(context.noBackupFilesDir, "native-staging")
                 if (stagingDir.exists() && stagingDir.isDirectory) {
                     stagingDir.listFiles()?.forEach { file ->
                         try { file.delete() } catch (ignored: Exception) {}
@@ -613,12 +614,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateEngine(context: Context) {
         viewModelScope.launch {
             _isUpdatingEngine.value = true
-            val res = DownloadEngine.updateEngine(context)
+            val res = DownloadEngine.ensureInitialized(context)
             _isUpdatingEngine.value = false
             res.onSuccess { msg ->
-                _message.value = "核心引擎更新成功: $msg"
+                _message.value = "检测完成：原生 aria2 下载引擎已就绪"
             }.onFailure { err ->
-                _errorDialogDetail.value = "更新引擎失败:\n${err.message}"
+                _errorDialogDetail.value = "aria2 引擎检测失败:\n${err.message}"
             }
         }
     }
