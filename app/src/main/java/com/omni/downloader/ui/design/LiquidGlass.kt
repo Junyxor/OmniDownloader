@@ -130,7 +130,7 @@ fun OmniGlassDock(
 ) {
     require(icons.isNotEmpty() && icons.size == labels.size && selectedIndex in icons.indices)
     val dark = isDarkGlass()
-    val shell = if (dark) Color(0xD8273146) else Color(0xC9FFFFFF)
+    val shell = if (dark) Color(0x60273146) else Color(0x65FFFFFF)
     val shape = RoundedCornerShape(34.dp)
 
     Surface(
