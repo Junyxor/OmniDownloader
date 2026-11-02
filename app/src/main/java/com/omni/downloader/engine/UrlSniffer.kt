@@ -135,7 +135,7 @@ object UrlSniffer {
 
         // 专门处理抖音：规整为标准视频 URL，杜绝 iesdouyin.com/share/video/ 被误判或导致解析报错
         if (cleanUrl.contains("douyin.com") || cleanUrl.contains("iesdouyin.com")) {
-            val douyinPattern = Pattern.compile("""(?:video|note)/(\d+)""")
+            val douyinPattern = Pattern.compile("""(?:video|note|slide|aweme)/(\d+)""")
             val matcher = douyinPattern.matcher(cleanUrl)
             if (matcher.find()) {
                 val videoId = matcher.group(1)
