@@ -29,6 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import com.omni.downloader.ui.design.LocalGlassEnabled
+import com.omni.downloader.ui.design.glassPanelColor
+import com.omni.downloader.ui.design.isDarkGlass
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -82,7 +85,7 @@ fun FormatSelectorSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = if (LocalGlassEnabled.current) glassPanelColor(isDarkGlass()) else MaterialTheme.colorScheme.surface
     ) {
         Column(
             modifier = Modifier
