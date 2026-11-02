@@ -133,15 +133,21 @@ object UrlSniffer {
             }
         }
 
-        // 专门处理抖音：规整为标准视频 URL，杜绝 iesdouyin.com/share/video/ 被误判或导致解析报错
+        // Preserve the Douyin content TYPE. A /share/note/ or /share/slides/
+        // must never be silently rewritten to /video/ (they may contain images).
         if (cleanUrl.contains("douyin.com") || cleanUrl.contains("iesdouyin.com")) {
-            val douyinPattern = Pattern.compile("""(?:video|note|slide|aweme)/(\d+)""")
-            val matcher = douyinPattern.matcher(cleanUrl)
-            if (matcher.find()) {
-                val videoId = matcher.group(1)
-                if (!videoId.isNullOrEmpty()) {
-                    cleanUrl = "https://www.douyin.com/video/$videoId"
-                }
+            val uri = runCatching { java.net.URI(cleanUrl) }.getOrNull()
+            val path = uri?.path.orEmpty()
+            val match = Regex("""/(?:share/)?(video|note|slide|slides|aweme)/(\d{17,22})(?:/|$)""")
+                .find(path)
+            if (match != null) {
+                val kind = match.groupValues[1]
+                val id = match.groupValues[2]
+                cleanUrl = if (kind in setOf("note", "slide", "slides"))
+                    "https://www.iesdouyin.com/share/slides/$id"
+                else
+                    // Mobile SSR has item-specific JSON; desktop /video/ is often CSR-only.
+                    "https://www.iesdouyin.com/share/video/$id"
             }
         }
 
@@ -185,7 +191,11 @@ object UrlSniffer {
         if (shouldStripQueryParams) {
             val qIndex = cleanUrl.indexOf('?')
             if (qIndex != -1) {
-                cleanUrl = cleanUrl.substring(0, qIndex)
+                val isDouyin = cleanUrl.contains("douyin.com") || cleanUrl.contains("iesdouyin.com")
+                val identityQueryOnly = isDouyin &&
+                    !Regex("""/(?:video|note|slide|slides|aweme)/(\d{17,22})(?:/|[?#])""").containsMatchIn(cleanUrl) &&
+                    Regex("""[?&](?:aweme_id|item_id|item_ids)=\d{17,22}(?:&|$)""").containsMatchIn(cleanUrl)
+                if (!identityQueryOnly) cleanUrl = cleanUrl.substring(0, qIndex)
             }
         }
 
