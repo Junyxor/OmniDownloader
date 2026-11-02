@@ -40,6 +40,10 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            // Preview APK installs alongside the published application without
+            // replacing its signed package or touching existing app data.
+            applicationIdSuffix = ".glasspreview"
+            versionNameSuffix = "-glass-preview"
         }
     }
 

@@ -47,6 +47,14 @@ class SettingsRepository private constructor(context: Context) {
     )
     val themeMode: StateFlow<String> = _themeMode.asStateFlow()
 
+    private val _glassEnabled = MutableStateFlow(prefs.getBoolean(KEY_GLASS_ENABLED, false))
+    val glassEnabled: StateFlow<Boolean> = _glassEnabled.asStateFlow()
+
+    fun setGlassEnabled(enabled: Boolean) {
+        _glassEnabled.value = enabled
+        prefs.edit().putBoolean(KEY_GLASS_ENABLED, enabled).apply()
+    }
+
     init {
         // 新版本配置规范迁移：仅在首次升级到版本 40 时清理旧版内置固定 ID，绝不误伤用户保存的任何网站
         val lastConfigVersion = prefs.getInt(KEY_APP_CONFIG_VERSION, 0)
@@ -197,6 +205,7 @@ class SettingsRepository private constructor(context: Context) {
         private const val KEY_HAS_PROMPTED_BILIBILI_LOGIN = "key_has_prompted_bilibili_login"
         private const val KEY_APP_LANGUAGE = "key_app_language"
         private const val KEY_THEME_MODE = "key_theme_mode"
+        private const val KEY_GLASS_ENABLED = "key_liquid_glass_enabled"
         private const val KEY_RELAY_SITES = "key_relay_sites"
         private const val KEY_HAS_SHOWN_RELAY_COMPAT_TIP = "key_has_shown_relay_compat_tip"
         private const val KEY_APP_CONFIG_VERSION = "key_app_config_version"

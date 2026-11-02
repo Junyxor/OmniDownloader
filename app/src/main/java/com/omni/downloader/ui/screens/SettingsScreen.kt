@@ -53,6 +53,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -105,6 +106,7 @@ fun SettingsScreen(
     val statusColors = LocalStatusColors.current
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val glassEnabled by viewModel.glassEnabled.collectAsStateWithLifecycle()
     val isUpdatingEngine by viewModel.isUpdatingEngine.collectAsStateWithLifecycle()
     val savedProxyUrl by viewModel.proxyUrl.collectAsStateWithLifecycle()
     var proxyInput by remember(savedProxyUrl) { mutableStateOf(savedProxyUrl) }
@@ -222,6 +224,24 @@ fun SettingsScreen(
                                     fallbackLabel = strings.appearanceSystem,
                                     onSelect = viewModel::setThemeMode
                                 )
+                            }
+                            OmniDivider(startIndent = 62)
+                            OmniSettingRow(
+                                icon = Icons.Outlined.Palette,
+                                title = when (appLanguage) {
+                                    "en" -> "Liquid Glass (preview)"
+                                    "ja" -> "リキッドガラス（プレビュー）"
+                                    "zh-TW" -> "液態玻璃（預覽）"
+                                    else -> "液态玻璃（预览）"
+                                },
+                                description = when (appLanguage) {
+                                    "en" -> "Lightweight translucent cards and a floating dock. No blur per list item."
+                                    "ja" -> "軽量な半透明カードとフローティングナビゲーション"
+                                    "zh-TW" -> "輕量半透明卡片與懸浮導航，列表不做逐項模糊"
+                                    else -> "轻量半透明卡片与悬浮导航，列表不做逐项模糊"
+                                }
+                            ) {
+                                Switch(checked = glassEnabled, onCheckedChange = viewModel::setGlassEnabled)
                             }
                         }
                     }

@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -60,6 +61,10 @@ fun OmniCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val glass = LocalGlassEnabled.current
+    val darkGlass = isDarkGlass()
+    val effectiveColor = if (glass && containerColor == MaterialTheme.colorScheme.surface) glassPanelColor(darkGlass) else containerColor
+    val effectiveBorder = if (glass) BorderStroke(1.dp, glassRimBrush(darkGlass)) else BorderStroke(1.dp, borderColor)
     val clickModifier = if (onClick != null) {
         Modifier
             .clip(RoundedCornerShape(OmniRadius.card.dp))
@@ -70,8 +75,8 @@ fun OmniCard(
     Surface(
         modifier = modifier.fillMaxWidth().then(clickModifier),
         shape = RoundedCornerShape(OmniRadius.card.dp),
-        color = containerColor,
-        border = BorderStroke(1.dp, borderColor),
+        color = effectiveColor,
+        border = effectiveBorder,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
@@ -238,7 +243,7 @@ fun OmniSegmentedTabs(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(OmniRadius.medium.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        color = if (LocalGlassEnabled.current) glassPanelColor(isDarkGlass()).copy(alpha = 0.70f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         tonalElevation = 0.dp
     ) {
         BoxWithConstraints(Modifier.padding(4.dp)) {
@@ -250,7 +255,7 @@ fun OmniSegmentedTabs(
             )
             Box(Modifier.offset(x = indicatorOffset).width(tabWidth).height(48.dp)
                 .clip(RoundedCornerShape((OmniRadius.medium - 3).dp))
-                .background(MaterialTheme.colorScheme.surface)
+                .background(if (LocalGlassEnabled.current) Brush.verticalGradient(listOf(Color.White.copy(alpha = if (isDarkGlass()) 0.24f else 0.92f), MaterialTheme.colorScheme.primary.copy(alpha = 0.13f))) else Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surface)))
                 .testTag("segmented-tab-indicator"))
             Row(Modifier.fillMaxWidth().height(48.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             titles.forEachIndexed { index, title ->

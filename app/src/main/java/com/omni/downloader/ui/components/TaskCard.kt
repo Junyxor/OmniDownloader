@@ -70,6 +70,10 @@ import com.omni.downloader.data.model.TaskStatus
 import com.omni.downloader.data.repository.TaskProgress
 import com.omni.downloader.ui.design.LocalTabActive
 import com.omni.downloader.ui.design.OmniPillButton
+import com.omni.downloader.ui.design.LocalGlassEnabled
+import com.omni.downloader.ui.design.glassPanelColor
+import com.omni.downloader.ui.design.glassRimBrush
+import com.omni.downloader.ui.design.isDarkGlass
 import com.omni.downloader.ui.localization.LocalAppStrings
 import com.omni.downloader.ui.theme.LocalStatusColors
 import kotlinx.coroutines.flow.StateFlow
@@ -120,8 +124,8 @@ fun TaskCard(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(
+        color = if (LocalGlassEnabled.current) glassPanelColor(isDarkGlass()) else MaterialTheme.colorScheme.surface,
+        border = if (LocalGlassEnabled.current) BorderStroke(1.dp, glassRimBrush(isDarkGlass())) else BorderStroke(
             width = 1.dp,
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
         ),

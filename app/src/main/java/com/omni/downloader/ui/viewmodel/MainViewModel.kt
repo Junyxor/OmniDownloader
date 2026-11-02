@@ -58,6 +58,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val downloadPath: StateFlow<String> = settingsRepository.downloadPath
     val appLanguage: StateFlow<String> = settingsRepository.appLanguage
     val themeMode: StateFlow<String> = settingsRepository.themeMode
+    val glassEnabled: StateFlow<Boolean> = settingsRepository.glassEnabled
+    fun setGlassEnabled(enabled: Boolean) = settingsRepository.setGlassEnabled(enabled)
 
     fun setThemeMode(mode: String) = settingsRepository.setThemeMode(mode)
     val bilibiliCookie: StateFlow<String> = settingsRepository.bilibiliCookie
