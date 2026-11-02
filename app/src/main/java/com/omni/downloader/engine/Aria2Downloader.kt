@@ -41,6 +41,26 @@ object Aria2Downloader {
         .replace(Regex("""https?://[^\s)]+"""), "[media URL]")
         .replace(Regex("""(?i)(?:auth_key|token|cookie|authorization)=[^\s&]+"""), "[redacted]")
 
+    /** Produce a useful and privacy-safe failure reason for the UI. */
+    internal fun explainFailure(exitCode: Int, output: String): String {
+        val log = output.lowercase(java.util.Locale.ROOT)
+        return when {
+            "403" in log || "forbidden" in log ->
+                "CDN HTTP 403：资源被拒绝。YouTube 通常需要重新获取播放参数、PO Token，或当前出口未获授权"
+            "429" in log || "too many requests" in log ->
+                "CDN HTTP 429：请求过于频繁，暂停重试后再试"
+            "401" in log || "unauthorized" in log ->
+                "CDN HTTP 401：需要授权或登录信息"
+            "404" in log || "not found" in log ->
+                "CDN HTTP 404：媒体资源已失效，请重新解析"
+            "ssl" in log || "certificate" in log ->
+                "TLS 证书校验失败，请检查设备时间、代理与证书信任"
+            "connection refused" in log || "failed to connect" in log ->
+                "无法连接媒体 CDN，请检查代理、VPN 或网络"
+            else -> "aria2 下载失败 (exit=$exitCode)：${sanitized(output.takeLast(900))}"
+        }
+    }
+
     fun cancel(taskId: String) {
         cancelled.add(taskId)
         // SIGTERM allows aria2 to persist its .aria2 control file for safe resume.
@@ -163,7 +183,7 @@ object Aria2Downloader {
             reader.join(1500)
             if (cancelled.contains(taskId)) throw IOException("任务已取消")
             if (exitCode != 0 || !destination.isFile || destination.length() == 0L) {
-                throw IOException("aria2 下载失败 (exit=$exitCode): ${sanitized(log.toString().takeLast(1500))}")
+                throw IOException(explainFailure(exitCode, log.toString()))
             }
             // Sidecars are needed for interrupted transfers, not successful ones.
             File(destination.absolutePath + ".aria2").delete()
