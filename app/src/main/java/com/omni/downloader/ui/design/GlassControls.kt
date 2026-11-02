@@ -128,7 +128,7 @@ fun GlassOutlinedButton(
             containerColor = Color.Transparent,
             contentColor = MaterialTheme.colorScheme.primary
         ) else colors ?: ButtonDefaults.outlinedButtonColors(),
-        border = if (glass) null else border ?: ButtonDefaults.outlinedButtonBorder(enabled),
+        border = if (glass) null else border ?: ButtonDefaults.outlinedButtonBorder,
         contentPadding = contentPadding,
         interactionSource = source,
         content = content
