@@ -368,13 +368,59 @@ object DomesticDirectExtractor {
             val info = extractDouyin(original).getOrElse {
                 return@withContext Result.failure(it)
             }
-            val img = info.multiMediaList.getOrNull(selectedImage)?.thumbnailUrl.orEmpty()
-            if (!img.startsWith("http")) {
-                return@withContext Result.failure(IOException("图文图片地址失效，请重新解析"))
+            val asset = info.imageAssets.getOrNull(selectedImage)
+                ?: return@withContext Result.failure(IOException("图集第 ${selectedImage + 1} 项不存在，请重新解析"))
+            val mediaUrls = (listOf(asset.url) + asset.mirrors).distinct()
+            if (mediaUrls.isEmpty()) {
+                return@withContext Result.failure(IOException("图集图片地址失效，请重新解析"))
             }
-            return@withContext DownloadEngine.downloadCoverFile(
-                context, img, task.title, proxyUrl, publicDir, onProgressUpdate
-            )
+            // Gallery downloads must use the existing aria2 transfer core, not
+            // the legacy OkHttp cover downloader or a separate media binary.
+            val staged = File(stagingDir, "douyin_image_${task.id}.part")
+            val headers = mapOf("User-Agent" to MOBILE_UA, "Referer" to "https://www.douyin.com/")
+            var lastError: Throwable? = null
+            for (mediaUrl in mediaUrls) {
+                if (!mediaUrl.startsWith("https://") && !mediaUrl.startsWith("http://")) continue
+                val downloaded = Aria2Downloader.download(
+                    context, task.id, mediaUrl, staged, headers, proxyUrl, onProgressUpdate
+                )
+                if (downloaded.isFailure) {
+                    lastError = downloaded.exceptionOrNull()
+                    if (Aria2Downloader.isCancelled(task.id)) {
+                        return@withContext Result.failure(IOException("图集下载已取消", lastError))
+                    }
+                    continue
+                }
+                val extension = ImageMagic.extension(staged)
+                if (extension == null) {
+                    staged.delete()
+                    lastError = IOException("服务器未返回合法图片（可能是 HTML 风控页或失效直链）")
+                    continue
+                }
+                val safeName = task.title.replace(Regex("""[\\/:*?"<>|]"""), "_")
+                    .trim().ifBlank { "Douyin_${selectedImage + 1}" }.take(90)
+                var output = File(publicDir, "$safeName.$extension")
+                var duplicate = 1
+                while (output.exists()) {
+                    output = File(publicDir, "${safeName}_${duplicate++}.$extension")
+                }
+                try {
+                    staged.copyTo(output, overwrite = false)
+                    staged.delete()
+                    android.media.MediaScannerConnection.scanFile(
+                        context, arrayOf(output.absolutePath), arrayOf("image/$extension"), null
+                    )
+                    onProgressUpdate(100f, "", "", TaskStatus.COMPLETED)
+                    return@withContext Result.success(output.absolutePath)
+                } catch (e: Exception) {
+                    output.delete()
+                    return@withContext Result.failure(e)
+                }
+            }
+            return@withContext Result.failure(IOException(
+                "图集第 ${selectedImage + 1} 张图片下载失败，已尝试所有地址",
+                lastError
+            ))
         }
         val cleanUrl = UrlSniffer.sanitizeAndResolveUrl(task.url)
         val site = UrlSniffer.identifySite(cleanUrl)
