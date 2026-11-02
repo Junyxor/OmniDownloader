@@ -80,4 +80,21 @@ class DouyinStructuredParserTest {
         assertTrue(result.availableVideoFormats.first().note.contains("未验证"))
     }
 
+    @Test fun originalImageUrlHasPriorityOverDisplayThumbnail() {
+        val json = """{"aweme_detail":{"aweme_id":"$id","desc":"Original",
+           "images":[{"url_list":["https://cdn.test/original.jpg"],
+           "display_image":{"url_list":["https://cdn.test/preview.jpg"]}}]}}"""
+        val meta = DouyinStructuredParser.parse(json, id,
+            "https://www.iesdouyin.com/share/video/$id")!!
+        assertEquals("图文", meta.siteName)
+        assertEquals("https://cdn.test/original.jpg", meta.imageAssets.first().url)
+        assertEquals("https://cdn.test/preview.jpg", meta.imageAssets.first().mirrors.single())
+    }
+
+    @Test fun incompleteSlideDetailMustNotBeParsedAsVideo() {
+        val json = """{"aweme_detail":{"aweme_id":"$id","aweme_type":68,
+           "video":{"play_addr":{"url_list":["https://cdn.test/not-the-album.mp4"]}}}}"""
+        assertNull(DouyinStructuredParser.parse(json, id, url))
+    }
+
 }
