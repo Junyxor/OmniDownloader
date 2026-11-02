@@ -30,8 +30,14 @@ object DownloadEngine {
     @Volatile private var initError: String? = null
 
     suspend fun ensureInitialized(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
-        ready = Aria2Downloader.isAvailable(context)
-        initError = if (ready) null else "ARM64 aria2c 文件未正确打包"
+        val aria = Aria2Downloader.isAvailable(context)
+        val lux = LuxExtractor.isAvailable(context)
+        ready = aria && lux
+        initError = when {
+            !aria -> "ARM64 aria2c 下载核心缺失"
+            !lux -> "ARM64 Lux 多站点解析核心缺失"
+            else -> null
+        }
         if (ready) Result.success(Unit) else Result.failure(IOException(initError))
     }
     fun isReady(): Boolean = ready
@@ -356,8 +362,8 @@ object DownloadEngine {
     }
 
     suspend fun updateEngine(context: Context): Result<String> = withContext(Dispatchers.IO) {
-        if (Aria2Downloader.isAvailable(context))
-            Result.success("aria2 已随 APK 安装，无需更新 Python 规则引擎")
-        else Result.failure(IOException("aria2 不可用，请重新安装"))
+        if (Aria2Downloader.isAvailable(context) && LuxExtractor.isAvailable(context))
+            Result.success("aria2 下载器与 Lux 多站点解析器均已安装，无需 Python 运行时")
+        else Result.failure(IOException("aria2 / Lux 原生模块不完整，请重新安装"))
     }
 }
