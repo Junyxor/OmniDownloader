@@ -1,5 +1,6 @@
 package com.omni.downloader.ui.design
 
+import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -148,18 +149,25 @@ fun OmniGlassDock(
                 animationSpec = tween(270, easing = OmniMotion.Emphasized),
                 label = "glassDockLens"
             )
+            // API 33+ uses three GPU shader samples for a bevel-shaped
+            // optical lens. Older devices keep the translucent low-cost lens.
+            val opticalModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                opticalGlassLensModifier(dark)
+            } else {
+                Modifier.background(
+                    Brush.verticalGradient(
+                        if (dark) listOf(Color(0x806D84B6), Color(0x573C496B))
+                        else listOf(Color(0xE9FFFFFF), Color(0x9CC9DDF6))
+                    )
+                )
+            }
             Box(
                 Modifier
                     .offset(x = indicatorOffset)
                     .width(widthPerTab)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(28.dp))
-                    .background(
-                        Brush.verticalGradient(
-                            if (dark) listOf(Color(0x806D84B6), Color(0x573C496B))
-                            else listOf(Color(0xE9FFFFFF), Color(0x9CC9DDF6))
-                        )
-                    )
+                    .then(opticalModifier)
                     .border(1.dp, glassRimBrush(dark), RoundedCornerShape(28.dp))
                     .testTag("glass-nav-indicator")
             )
