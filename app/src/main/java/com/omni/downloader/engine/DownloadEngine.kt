@@ -78,6 +78,11 @@ object DownloadEngine {
                         url = url, title = "直接媒体文件", siteName = "直链",
                         availableVideoFormats = listOf(FormatOption(url, "原始媒体", ext = "mp4"))
                     ))
+                site == "X (Twitter)" -> {
+                    // Public-status API fallback independent of Lux's older Twitter API.
+                    val fx = XPublicExtractor.extract(url)
+                    if (fx.isSuccess) fx else LuxExtractor.extract(context, url, proxyUrl)
+                }
                 LuxExtractor.supports(site) -> {
                     val lux = LuxExtractor.extract(context, url, proxyUrl)
                     if (lux.isSuccess) lux else if (site == "网络视频") {
@@ -139,6 +144,9 @@ object DownloadEngine {
         // In particular, do not send a Lux YouTube stream through an unrelated site adapter.
         if (task.parserId == "lux") {
             return@withContext LuxExtractor.download(context, task, staging, output, onProgressUpdate, proxyUrl)
+        }
+        if (task.parserId == "fx") {
+            return@withContext XPublicExtractor.download(context, task, staging, output, onProgressUpdate, proxyUrl)
         }
         if (task.parserId == "douyin" && task.url.contains("#omni_douyin_image=")) {
             return@withContext DomesticDirectExtractor.download(context, task, staging, output, onProgressUpdate, proxyUrl)
