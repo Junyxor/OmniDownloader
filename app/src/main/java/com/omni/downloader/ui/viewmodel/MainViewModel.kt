@@ -517,7 +517,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun cancelCollection(context: Context, collectionId: String) {
         val allTasks = repository.tasks.value.filter { it.collectionId == collectionId }
         allTasks.forEach { task ->
-            if (task.status == TaskStatus.DOWNLOADING || task.status == TaskStatus.PROCESSING || task.status == TaskStatus.PENDING) {
+            if (task.status == TaskStatus.DOWNLOADING || task.status == TaskStatus.PROCESSING || task.status == TaskStatus.PENDING || task.status == TaskStatus.PAUSED) {
                 DownloadService.cancelDownload(context, task.id)
             }
         }
