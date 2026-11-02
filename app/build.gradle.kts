@@ -102,6 +102,8 @@ dependencies {
 
     // Network (OkHttp for link redirection and sniffing)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // MIT: lightweight HTML parser for generic HTML5 / OpenGraph / JSON-LD media discovery.
+    implementation("org.jsoup:jsoup:1.18.3")
 
     // Native aria2c is packaged via CI in jniLibs/arm64-v8a; no Python/FFmpeg runtime.
 
