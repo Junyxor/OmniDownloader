@@ -9,6 +9,10 @@ on:
       - '.github/workflows/native-parser-unit-tests.yml'
   workflow_dispatch:
 
+concurrency:
+  group: native-parser-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
