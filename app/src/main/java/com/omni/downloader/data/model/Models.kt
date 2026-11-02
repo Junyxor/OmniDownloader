@@ -57,7 +57,8 @@ data class VideoMetadata(
     val isGif: Boolean = false,
     val availableVideoFormats: List<FormatOption> = emptyList(),
     val availableAudioFormats: List<FormatOption> = emptyList(),
-    val multiMediaList: List<VideoMetadata> = emptyList() // 包含推文中的全部独立视频
+    val multiMediaList: List<VideoMetadata> = emptyList(), // 包含推文中的全部独立视频
+    val parserId: String = "" // "lux", "douyin" or native default; prevent wrong decoder on download
 )
 
 /**
@@ -103,5 +104,6 @@ data class DownloadTask(
     val episodeTotal: Int = 0,
     // 已解析的国内媒体源与请求头，独立于 UI 清晰度标签，并随任务持久化。
     val directMediaUrl: String = "",
-    val directMediaHeaders: Map<String, String> = emptyMap()
+    val directMediaHeaders: Map<String, String> = emptyMap(),
+    val parserId: String = "" // persistent extractor identity for correct task resume
 )
