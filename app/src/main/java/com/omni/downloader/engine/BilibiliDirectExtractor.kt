@@ -480,6 +480,8 @@ object BilibiliDirectExtractor {
 
                         try {
                             downloadStreamToFile(
+                                context = context, taskId = task.id,
+                    context = context, taskId = task.id,
                                 url = bestVideoUrl,
                                 backups = bestVideoBackups,
                                 bvid = bvid,
@@ -492,6 +494,8 @@ object BilibiliDirectExtractor {
 
                             if (bestAudioUrl.isNotEmpty()) {
                                 downloadStreamToFile(
+                                context = context, taskId = task.id,
+                    context = context, taskId = task.id,
                                     url = bestAudioUrl,
                                     backups = bestAudioBackups,
                                     bvid = bvid,
@@ -528,6 +532,7 @@ object BilibiliDirectExtractor {
                 if (!mergeSuccess) {
                     onProgressUpdate(10f, "", "切换官方 MP4 直链通道...", TaskStatus.DOWNLOADING)
                     val durlSuccess = downloadDurlDirectly(
+                        context = context, taskId = task.id,
                         bvid = bvid,
                         cid = cid,
                         qn = durlQn,
@@ -571,6 +576,7 @@ object BilibiliDirectExtractor {
 
                 val tempVideo = File(stagingDir, "bili_${task.id}_vonly.m4s")
                 downloadStreamToFile(
+                    context = context, taskId = task.id,
                     url = bestVideoUrl,
                     backups = bestVideoBackups,
                     bvid = bvid,
@@ -634,6 +640,7 @@ object BilibiliDirectExtractor {
                 val tempAudio = File(stagingDir, "bili_${task.id}_raw_audio.m4s")
 
                 downloadStreamToFile(
+                    context = context, taskId = task.id,
                     url = bestAudioUrl,
                     backups = bestAudioBackups,
                     bvid = bvid,
@@ -688,7 +695,10 @@ object BilibiliDirectExtractor {
     /**
      * 流式下载单个分块到沙盒文件并上报瞬时网速和精准进度
      */
+    /** Multi-connection aria2 transfer for each Bilibili DASH video/audio track. */
     private fun downloadStreamToFile(
+        context: Context,
+        taskId: String,
         url: String,
         backups: List<String>,
         bvid: String,
@@ -696,76 +706,36 @@ object BilibiliDirectExtractor {
         startProgress: Float,
         progressWeight: Float,
         stepTitle: String,
-        onProgressUpdate: (progress: Float, speed: String, eta: String, status: TaskStatus) -> Unit
+        onProgressUpdate: (Float, String, String, TaskStatus) -> Unit
     ) {
-        val targetUrls = mutableListOf(url).apply { addAll(backups) }
-        var lastErr: Exception? = null
-
-        for (targetUrl in targetUrls) {
-            try {
-                val req = Request.Builder()
-                    .url(targetUrl)
-                    .header("User-Agent", PC_USER_AGENT)
-                    .header("Referer", "https://www.bilibili.com/video/$bvid")
-                    .header("Cookie", getCookieHeader())
-                    .build()
-
-                val resp = httpClient.newCall(req).execute()
-                if (!resp.isSuccessful) {
-                    throw IOException("HTTP 错误: ${resp.code}")
-                }
-
-                val body = resp.body ?: throw IOException("返回内容为空")
-                val totalBytes = body.contentLength()
-                val inputStream = body.byteStream()
-                val outputStream = FileOutputStream(dest)
-
-                val buffer = ByteArray(64 * 1024)
-                var bytesRead: Int
-                var downloadedBytes = 0L
-                var lastTime = SystemClock.elapsedRealtime()
-                var bytesSinceLast = 0L
-
-                outputStream.use { out ->
-                    inputStream.use { inp ->
-                        while (inp.read(buffer).also { bytesRead = it } != -1) {
-                            out.write(buffer, 0, bytesRead)
-                            downloadedBytes += bytesRead
-                            bytesSinceLast += bytesRead
-
-                            val now = SystemClock.elapsedRealtime()
-                            if (now - lastTime >= 150) {
-                                val speedBytesPerSec = (bytesSinceLast * 1000) / (now - lastTime)
-                                val speedStr = formatBytes(speedBytesPerSec) + "/s"
-                                val fraction = if (totalBytes > 0) downloadedBytes.toFloat() / totalBytes else 0.5f
-                                val currentProgress = startProgress + fraction * progressWeight
-
-                                val etaStr = if (totalBytes > 0 && speedBytesPerSec > 0) {
-                                    val remainingBytes = totalBytes - downloadedBytes
-                                    val etaSec = remainingBytes / speedBytesPerSec
-                                    "${etaSec}秒"
-                                } else ""
-
-                                onProgressUpdate(currentProgress, speedStr, etaStr, TaskStatus.DOWNLOADING)
-                                lastTime = now
-                                bytesSinceLast = 0L
-                            }
-                        }
-                    }
-                }
-                return // 成功下载并退出
-            } catch (e: Exception) {
-                lastErr = e
-                Log.w(TAG, "下载流尝试失败，切换备选流: ${e.message}")
+        var lastError: Exception? = null
+        for (candidate in listOf(url) + backups) {
+            val headers = mapOf(
+                "User-Agent" to PC_USER_AGENT,
+                "Referer" to "https://www.bilibili.com/video/$bvid",
+                "Cookie" to getCookieHeader()
+            )
+            val result = Aria2Downloader.download(
+                context, taskId, candidate, dest, headers
+            ) { progress, speed, eta, status ->
+                onProgressUpdate(
+                    startProgress + progress / 100f * progressWeight,
+                    speed, eta, status
+                )
             }
+            if (result.isSuccess) return
+            lastError = result.exceptionOrNull() as? Exception
+            Log.w(TAG, "DASH aria2 transfer failed; alternate CDN: ${lastError?.message}")
         }
-        throw lastErr ?: IOException("所有 CDN 流均下载失败")
+        throw lastError ?: IOException("aria2 failed for all Bilibili CDN URLs")
     }
 
     /**
      * 当 DASH 双流或 FFmpeg 混流出现异常时，直接从 B 站官方拉取渐进式一体化 MP4 直链 (无须混流，100% 成功)
      */
     private fun downloadDurlDirectly(
+        context: Context,
+        taskId: String,
         bvid: String,
         cid: Long,
         qn: Int,
@@ -794,6 +764,7 @@ object BilibiliDirectExtractor {
             val backups = parseBackupUrls(first.optJSONArray("backup_url"))
 
             downloadStreamToFile(
+                context = context, taskId = taskId,
                 url = streamUrl,
                 backups = backups,
                 bvid = bvid,
