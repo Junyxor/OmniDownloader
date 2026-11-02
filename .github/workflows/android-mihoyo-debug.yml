@@ -23,14 +23,22 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Install Android 34 SDK
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      # GitHub-hosted Ubuntu already has the Android command-line tools.
+      # Avoid setup-android@v3: it still requests the removed legacy 'tools' SDK package.
+      - name: Install Android SDK platform 34
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDK_MANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          if [ -z "$SDK_MANAGER" ]; then
+            echo "Android sdkmanager not installed on this runner"
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          "$SDK_MANAGER" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Test and build debug APK
         run: |
