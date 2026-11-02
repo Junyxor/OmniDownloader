@@ -135,8 +135,10 @@ object DomesticDirectExtractor {
     }
 
     private fun requestDouyinFeedApi(videoId: String, pageUrl: String): VideoMetadata? {
+        // Compatibility-only legacy endpoint. An empty response or different aweme_id is NOT success.
+        // Do not mutate playwm URLs: changing a string is not a verified no-watermark method.
         val apiUrl = "https://api.amemv.com/aweme/v1/feed/?aweme_id=$videoId"
-        try {
+        return try {
             val req = Request.Builder()
                 .url(apiUrl)
                 .header("User-Agent", MOBILE_UA)
@@ -145,108 +147,29 @@ object DomesticDirectExtractor {
                 if (!response.isSuccessful) return null
                 response.body?.string()
             } ?: return null
-            val json = JSONObject(body)
-            val awemeList = json.optJSONArray("aweme_list") ?: return null
-
-            // 只能使用与作品 ID 严格匹配的记录，绝不回退到列表第一项。
-            var matchedItem: JSONObject? = null
-            for (i in 0 until awemeList.length()) {
-                val item = awemeList.optJSONObject(i) ?: continue
-                if (item.optString("aweme_id") == videoId) {
-                    matchedItem = item
-                    break
-                }
+            val metadata = DouyinDetailParser.parse(body, pageUrl, videoId).getOrElse {
+                Log.w(TAG, "Feed 解析失败: ${it.message}")
+                return null
             }
-            if (matchedItem == null) return null
-
-            val title = matchedItem.optString("desc", "抖音视频_$videoId").trim()
-            val author = matchedItem.optJSONObject("author")?.optString("nickname", "抖音创作者") ?: "抖音创作者"
-            val duration = matchedItem.optInt("duration", 0) / 1000
-
-            val videoObj = matchedItem.optJSONObject("video")
-            val cover = videoObj?.optJSONObject("cover")?.optJSONArray("url_list")?.optString(0, "") ?: ""
-
-            // 提取播放直链 (play_addr -> url_list)
-            val playObj = videoObj?.optJSONObject("play_addr")
-            val urlList = playObj?.optJSONArray("url_list")
-            var videoDirectUrl = ""
-            if (urlList != null && urlList.length() > 0) {
-                for (i in 0 until urlList.length()) {
-                    val candidate = urlList.optString(i, "")
-                    if (candidate.isNotEmpty()) {
-                        videoDirectUrl = candidate
-                        break
-                    }
-                }
+            if (metadata.imageAssets.isNotEmpty()) {
+                // Gallery media is not a video stream and requires its own download adapter.
+                return null
             }
-
-            // 若在 play_addr 中未找到，遍历 bit_rate
-            if (videoDirectUrl.isEmpty()) {
-                val bitRates = videoObj?.optJSONArray("bit_rate")
-                if (bitRates != null && bitRates.length() > 0) {
-                    for (i in 0 until bitRates.length()) {
-                        val br = bitRates.optJSONObject(i) ?: continue
-                        val brUrls = br.optJSONObject("play_addr")?.optJSONArray("url_list")
-                        if (brUrls != null && brUrls.length() > 0) {
-                            videoDirectUrl = brUrls.optString(0, "")
-                            if (videoDirectUrl.isNotEmpty()) break
-                        }
-                    }
-                }
-            }
-
-            // 无水印替换 (playwm -> play)
-            val cleanVideoUrl = videoDirectUrl.replace("playwm", "play")
-
-            // 提取独立原声音频 (music -> play_url)
-            val musicObj = matchedItem.optJSONObject("music")
-            val musicUrl = musicObj?.optJSONObject("play_url")?.optJSONArray("url_list")?.optString(0, "") ?: ""
-
-            val audioOptions = mutableListOf<FormatOption>()
-            if (musicUrl.isNotEmpty()) {
-                audioOptions.add(
-                    FormatOption(
-                        formatId = musicUrl,
-                        resolutionLabel = "独立原声音频 (MP3)",
-                        ext = "mp3",
-                        isAudioOnly = true,
-                        note = "高品质原声"
-                    )
-                )
-            }
-
-            if (cleanVideoUrl.isNotEmpty()) {
-                val metadata = VideoMetadata(
-                    url = pageUrl,
-                    title = if (title.isNotBlank()) title else "抖音视频_$videoId",
-                    author = author,
-                    durationText = if (duration > 0) "${duration}秒" else "",
-                    thumbnailUrl = cover,
-                    siteName = "抖音",
-                    availableVideoFormats = listOf(
-                        FormatOption(
-                            formatId = cleanVideoUrl,
-                            resolutionLabel = "原画 (无水印)",
-                            ext = "mp4",
-                            note = "极速直连原画"
-                        )
-                    ),
-                    availableAudioFormats = audioOptions
-                )
+            metadata.availableVideoFormats.firstOrNull()?.formatId?.let { directUrl ->
                 directStreamCache[pageUrl] = DirectStreamInfo(
-                    videoUrl = cleanVideoUrl,
+                    videoUrl = directUrl,
                     headers = mapOf("User-Agent" to MOBILE_UA, "Referer" to "https://www.douyin.com/")
                 )
                 directStreamCache["https://www.douyin.com/video/$videoId"] = DirectStreamInfo(
-                    videoUrl = cleanVideoUrl,
+                    videoUrl = directUrl,
                     headers = mapOf("User-Agent" to MOBILE_UA, "Referer" to "https://www.douyin.com/")
                 )
-                return metadata
             }
+            metadata
         } catch (e: Exception) {
-            Log.e(TAG, "requestDouyinFeedApi 异常: ${e.message}", e)
+            Log.w(TAG, "Feed 接口不可用: ${e.message}")
+            null
         }
-        return null
     }
 
     private fun parseDouyinHtml(html: String, pageUrl: String, videoId: String): VideoMetadata? {
