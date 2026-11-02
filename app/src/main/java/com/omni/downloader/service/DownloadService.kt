@@ -30,6 +30,10 @@ class DownloadService : Service() {
     private lateinit var repository: TaskRepository
 
     private val taskQueue = ConcurrentLinkedQueue<DownloadTask>()
+    // A pause retains media parts and metadata. Resume while shutdown is still in
+    // progress is deferred until the old download worker has fully exited.
+    private val pausedTaskIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val resumeAfterStop = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     @Volatile
     private var isProcessing = false
     @Volatile
@@ -73,38 +77,56 @@ class DownloadService : Service() {
 
     @Synchronized
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action
-        when (action) {
-            ACTION_START_TASK -> {
-                val taskId = intent.getStringExtra(EXTRA_TASK_ID) ?: return START_NOT_STICKY
-                val task = repository.getTask(taskId)
-                if (task != null && !taskQueue.contains(task)) {
+        val id = intent?.getStringExtra(EXTRA_TASK_ID)
+        when (intent?.action) {
+            ACTION_START_TASK, ACTION_RESUME_TASK -> {
+                if (id == null) return START_NOT_STICKY
+                val task = repository.getTask(id) ?: return START_NOT_STICKY
+                if (task.status == TaskStatus.COMPLETED || task.status == TaskStatus.CANCELLED) {
+                    return START_NOT_STICKY
+                }
+                if (id == currentRunningTaskId && id in pausedTaskIds) {
+                    // Do not start a second writer while aria2 is shutting down.
+                    resumeAfterStop.add(id)
+                } else if (id != currentRunningTaskId && taskQueue.none { it.id == id }) {
+                    pausedTaskIds.remove(id)
+                    resumeAfterStop.remove(id)
+                    repository.updateTaskProgress(id, task.progress, "", "", TaskStatus.PENDING)
                     taskQueue.offer(task)
                     processNextTask()
                 }
             }
+            ACTION_PAUSE_TASK -> {
+                if (id == null) return START_NOT_STICKY
+                val task = repository.getTask(id) ?: return START_NOT_STICKY
+                if (task.status in setOf(TaskStatus.PENDING, TaskStatus.DOWNLOADING, TaskStatus.PROCESSING)) {
+                    pausedTaskIds.add(id)
+                    resumeAfterStop.remove(id)
+                    taskQueue.removeIf { it.id == id }
+                    repository.updateTaskProgress(id, task.progress, "", "", TaskStatus.PAUSED)
+                    if (currentRunningTaskId == id) DownloadEngine.cancelTask(id)
+                }
+                if (!isProcessing) processNextTask()
+            }
             ACTION_CANCEL_TASK -> {
-                val taskId = intent.getStringExtra(EXTRA_TASK_ID) ?: return START_NOT_STICKY
-                taskQueue.removeIf { it.id == taskId }
-                if (currentRunningTaskId == taskId) {
-                    DownloadEngine.cancelTask(taskId)
+                if (id == null) return START_NOT_STICKY
+                pausedTaskIds.remove(id)
+                resumeAfterStop.remove(id)
+                taskQueue.removeIf { it.id == id }
+                if (currentRunningTaskId == id) {
+                    DownloadEngine.cancelTask(id)
                     currentRunningTaskId = null
                 }
-                repository.updateTaskProgress(taskId, 0f, "", "", TaskStatus.CANCELLED)
-                if (taskQueue.isEmpty() && currentRunningTaskId == null) {
-                    releaseWakeLock()
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                }
+                repository.updateTaskProgress(id, 0f, "", "", TaskStatus.CANCELLED)
+                if (!isProcessing) processNextTask()
             }
             ACTION_CANCEL_ALL -> {
-                currentRunningTaskId?.let { runningId ->
-                    DownloadEngine.cancelTask(runningId)
-                    currentRunningTaskId = null
-                }
+                currentRunningTaskId?.let { DownloadEngine.cancelTask(it) }
+                currentRunningTaskId = null
                 taskQueue.clear()
-                // 保留工作协程的占用状态，等待取消退出后再启动新任务。
-                releaseWakeLock()
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                pausedTaskIds.clear()
+                resumeAfterStop.clear()
+                // The worker owns its lifecycle and will release its wake lock.
             }
         }
         return START_NOT_STICKY
@@ -113,16 +135,27 @@ class DownloadService : Service() {
     @Synchronized
     private fun processNextTask() {
         if (isProcessing) return
-        val next = taskQueue.poll() ?: run {
+        var next: DownloadTask? = null
+        while (true) {
+            val queued = taskQueue.poll() ?: break
+            val live = repository.getTask(queued.id) ?: continue
+            if (live.status == TaskStatus.PAUSED || live.status == TaskStatus.CANCELLED ||
+                live.status == TaskStatus.COMPLETED) continue
+            next = live
+            break
+        }
+        if (next == null) {
             releaseWakeLock()
             stopForeground(STOP_FOREGROUND_REMOVE)
             return
         }
+        val active = next
+        repository.updateTaskProgress(active.id, active.progress, "", "", TaskStatus.DOWNLOADING)
 
         acquireWakeLock()
         isProcessing = true
-        currentRunningTaskId = next.id
-        startForeground(NOTIFICATION_ID, buildProgressNotification(next, 0f, "准备下载..."))
+        currentRunningTaskId = active.id
+        startForeground(NOTIFICATION_ID, buildProgressNotification(active, 0f, "准备下载..."))
 
         serviceScope.launch {
             val proxy = com.omni.downloader.data.repository.SettingsRepository.getInstance(applicationContext).proxyUrl.value
@@ -132,9 +165,9 @@ class DownloadService : Service() {
             var lastReportedProgress = -1f
             var lastReportedSpeed = ""
 
-            val result = DownloadEngine.executeDownload(applicationContext, next, proxy) { progress, speed, eta, status ->
+            val result = DownloadEngine.executeDownload(applicationContext, active, proxy) { progress, speed, eta, status ->
                 synchronized(this@DownloadService) {
-                    if (currentRunningTaskId != next.id) return@executeDownload
+                    if (currentRunningTaskId != active.id || active.id in pausedTaskIds) return@executeDownload
                     val now = android.os.SystemClock.elapsedRealtime()
                     val isStatusChanged = status != lastStatus
 
@@ -147,7 +180,7 @@ class DownloadService : Service() {
                         lastStatus = status
                         lastReportedProgress = progress
                         lastReportedSpeed = speed
-                        repository.updateTaskProgress(next.id, progress, speed, eta, status)
+                        repository.updateTaskProgress(active.id, progress, speed, eta, status)
                     }
 
                     // 2. 系统通知 Binder 节流：状态转换立即更新；同状态内至少间隔 800ms，彻底消除 IPC 造成的全局掉帧
@@ -159,27 +192,33 @@ class DownloadService : Service() {
                         } else {
                             "$speed ${if (eta.isNotEmpty()) "· 剩余 $eta" else ""}"
                         }
-                        notificationManager.notify(NOTIFICATION_ID, buildProgressNotification(next, progress, statusText, status))
+                        notificationManager.notify(NOTIFICATION_ID, buildProgressNotification(active, progress, statusText, status))
                     }
                 }
             }
 
             synchronized(this@DownloadService) {
-                // 已取消的任务不再发布完成通知，也不覆盖 CANCELLED 状态。
-                if (currentRunningTaskId == next.id) {
+                // Pause is not a failure: the native downloader has stopped and
+                // its .aria2 / .httpresume file remains available for a future run.
+                if (active.id in pausedTaskIds) {
+                    if (resumeAfterStop.remove(active.id)) {
+                        pausedTaskIds.remove(active.id)
+                        repository.getTask(active.id)?.let { saved ->
+                            repository.updateTaskProgress(saved.id, saved.progress, "", "", TaskStatus.PENDING)
+                            if (taskQueue.none { it.id == saved.id }) taskQueue.offer(saved)
+                        }
+                    }
+                } else if (currentRunningTaskId == active.id) {
                     result.onSuccess { finalPath ->
-                        repository.markCompleted(next.id, finalPath)
+                        repository.markCompleted(active.id, finalPath)
                         MediaScannerConnection.scanFile(
-                            applicationContext,
-                            arrayOf(finalPath),
-                            null
+                            applicationContext, arrayOf(finalPath), null
                         ) { _, _ -> }
-                        showCompletedNotification(next)
+                        showCompletedNotification(active)
                     }.onFailure { err ->
-                        repository.markFailed(next.id, err.message ?: "下载过程中遇到错误")
+                        repository.markFailed(active.id, err.message ?: "下载过程中遇到错误")
                     }
                 }
-
                 isProcessing = false
                 currentRunningTaskId = null
                 processNextTask()
@@ -254,6 +293,8 @@ class DownloadService : Service() {
 
         const val ACTION_START_TASK = "com.omni.downloader.START_TASK"
         const val ACTION_CANCEL_TASK = "com.omni.downloader.CANCEL_TASK"
+        const val ACTION_PAUSE_TASK = "com.omni.downloader.PAUSE_TASK"
+        const val ACTION_RESUME_TASK = "com.omni.downloader.RESUME_TASK"
         const val ACTION_CANCEL_ALL = "com.omni.downloader.CANCEL_ALL"
         const val EXTRA_TASK_ID = "extra_task_id"
 
@@ -267,6 +308,23 @@ class DownloadService : Service() {
             } else {
                 context.startService(intent)
             }
+        }
+
+        fun pauseDownload(context: Context, taskId: String) {
+            context.startService(Intent(context, DownloadService::class.java).apply {
+                action = ACTION_PAUSE_TASK
+                putExtra(EXTRA_TASK_ID, taskId)
+            })
+        }
+
+        fun resumeDownload(context: Context, taskId: String) {
+            val intent = Intent(context, DownloadService::class.java).apply {
+                action = ACTION_RESUME_TASK
+                putExtra(EXTRA_TASK_ID, taskId)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                context.startForegroundService(intent)
+            else context.startService(intent)
         }
 
         fun cancelDownload(context: Context, taskId: String) {
