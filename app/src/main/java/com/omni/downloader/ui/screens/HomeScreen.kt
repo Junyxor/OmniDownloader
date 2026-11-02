@@ -523,12 +523,9 @@ private fun HomePlatformChips() {
             "抖音" to DouyinBlack,
             "快手" to KuaishouOrange,
             "小红书" to XiaohongshuRed,
-            "YouTube" to YouTubeRed,
             "TikTok" to TikTokCyan,
-            "X (Twitter)" to TwitterBlue,
-            "Instagram" to InstagramPink,
-            "Facebook" to FacebookBlue,
-            "Pinterest" to PinterestRed
+            "部分米游社" to BilibiliPink,
+            "通用 HTML5 网页" to MaterialTheme.colorScheme.primary
         )
     }
     FlowRow(
@@ -616,6 +613,12 @@ private fun HomeActiveTasksSection(
             val onCancelHomeTask = remember(viewModel, context) {
                 { id: String -> viewModel.cancelTask(context, id) }
             }
+            val onPauseHomeTask = remember(viewModel, context) {
+                { id: String -> viewModel.pauseTask(context, id) }
+            }
+            val onResumeHomeTask = remember(viewModel, context) {
+                { id: String -> viewModel.resumeTask(context, id) }
+            }
             val onDeleteHomeTask = remember(viewModel) {
                 { id: String, deleteFile: Boolean -> viewModel.deleteTask(id, deleteFile) }
             }
@@ -628,6 +631,8 @@ private fun HomeActiveTasksSection(
                     TaskCard(
                         task = task,
                         onCancel = onCancelHomeTask,
+                        onPause = onPauseHomeTask,
+                        onResume = onResumeHomeTask,
                         onDelete = onDeleteHomeTask,
                         onRetry = onRetryHomeTask,
                         progressFlowProvider = viewModel::getTaskProgress
