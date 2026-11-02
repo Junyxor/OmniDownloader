@@ -11,8 +11,8 @@ object DomesticMediaSource {
         if (metadata.siteName == "米游社") return ""
         if (metadata.siteName !in setOf("抖音", "快手", "小红书", "米哈游百科")) return ""
         val formats = metadata.availableVideoFormats
-        return formats.firstOrNull { it.formatId == selected?.formatId && it.formatId.startsWith("https://") }?.formatId
-            ?: formats.firstOrNull { it.formatId.startsWith("https://") }?.formatId
+        return formats.firstOrNull { it.formatId == selected?.formatId && it.formatId.startsWith("http") }?.formatId
+            ?: formats.firstOrNull { it.formatId.startsWith("http") }?.formatId
             ?: ""
     }
 
