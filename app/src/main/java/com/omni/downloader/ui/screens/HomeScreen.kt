@@ -524,6 +524,11 @@ private fun HomePlatformChips() {
             "快手" to KuaishouOrange,
             "小红书" to XiaohongshuRed,
             "TikTok" to TikTokCyan,
+            "YouTube (测试)" to YouTubeRed,
+            "X (测试)" to TwitterBlue,
+            "Instagram (测试)" to InstagramPink,
+            "Facebook (测试)" to FacebookBlue,
+            "Pinterest (测试)" to PinterestRed,
             "部分米游社" to BilibiliPink,
             "通用 HTML5 网页" to TikTokCyan
         )
