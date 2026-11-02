@@ -1,5 +1,6 @@
 package com.omni.downloader.ui.screens
 
+import com.omni.downloader.ui.design.glassChrome
 import com.omni.downloader.ui.design.GlassButton
 import com.omni.downloader.ui.design.GlassOutlinedButton
 import com.omni.downloader.ui.design.GlassTextButton
@@ -183,8 +184,8 @@ fun SettingsScreen(
             LazyColumn(
                 state = pageListStates[index],
                 modifier = Modifier.fillMaxSize().testTag("settings_page_" + page.name),
-                contentPadding = if (page == SettingsPage.ROOT) PaddingValues(bottom = 24.dp)
-                    else PaddingValues(start = 16.dp, end = 16.dp, bottom = 28.dp)
+                contentPadding = if (page == SettingsPage.ROOT) PaddingValues(bottom = if (com.omni.downloader.ui.design.LocalGlassEnabled.current) 112.dp else 24.dp)
+                    else PaddingValues(start = 16.dp, end = 16.dp, bottom = if (com.omni.downloader.ui.design.LocalGlassEnabled.current) 112.dp else 28.dp)
             ) {
                 if (page == SettingsPage.ROOT) {
                     items(SettingsPage.entries.filter { it != SettingsPage.ROOT }, key = { it.name }, contentType = { "category" }) { category ->
@@ -906,6 +907,7 @@ private fun SettingDropdown(
         }
 
         DropdownMenu(
+            modifier = Modifier.glassChrome(RoundedCornerShape(18.dp)),
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
