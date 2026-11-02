@@ -42,7 +42,8 @@ object MihoyoVideoExtractor {
         val type: SourceType,
         val id: String,
         val appSn: String = "",
-        val videoIndex: Int = 0
+        val videoIndex: Int = 0,
+        val postGame: String = ""
     )
     private data class VideoGroup(
         val title: String,
@@ -58,8 +59,10 @@ object MihoyoVideoExtractor {
         if (uri.scheme?.lowercase(Locale.ROOT) !in setOf("https", "http")) return null
         val host = uri.host?.lowercase(Locale.ROOT) ?: return null
         val path = uri.path.orEmpty().lowercase(Locale.ROOT)
-        val index = Regex("""(?:^|&)omni_vod=(\d+)""")
-            .find(uri.fragment.orEmpty())?.groupValues?.get(1)?.toIntOrNull()
+        // Mobile links use a hash router: /ys/#/article/79015625.
+        val fragment = uri.fragment.orEmpty().lowercase(Locale.ROOT)
+        val index = Regex("""(?:^|[?&])omni_vod=(\d+)""")
+            .find(fragment)?.groupValues?.get(1)?.toIntOrNull()
             ?.takeIf { it in 0..99 } ?: 0
         if (host == "baike.mihoyo.com" || host == "bbs.mihoyo.com") {
             val wiki = Regex("""^/(bh3|sr|zzz|ys|wd)/(?:wiki|obc)/content/(\d+)(?:/|$)""").find(path)
@@ -68,11 +71,27 @@ object MihoyoVideoExtractor {
                 return Source(SourceType.WIKI, wiki.groupValues[2], app, index)
             }
         }
-        if (host in setOf("www.miyoushe.com", "miyoushe.com", "bbs.mihoyo.com")) {
-            val post = Regex("""^/(?:bh3|ys|sr|zzz|wd|bh2|dby)/article/(\d+)(?:/|$)""").find(path)
-            if (post != null) return Source(SourceType.POST, post.groupValues[1], videoIndex = index)
+        if (host in setOf("www.miyoushe.com", "miyoushe.com", "m.miyoushe.com", "bbs.mihoyo.com")) {
+            val desktop = Regex("""^/(bh3|ys|sr|zzz|wd|bh2|dby)/article/(\d+)(?:/|$)""").find(path)
+            if (desktop != null) return Source(
+                SourceType.POST, desktop.groupValues[2], videoIndex = index, postGame = desktop.groupValues[1]
+            )
+            val game = Regex("""^/(bh3|ys|sr|zzz|wd|bh2|dby)(?:/|$)""")
+                .find(path)?.groupValues?.get(1)
+            val mobile = Regex("""^/?article/(\d+)(?:/|$)""")
+                .find(fragment.substringBefore('?'))
+            if (game != null && mobile != null) return Source(
+                SourceType.POST, mobile.groupValues[1], videoIndex = index, postGame = game
+            )
         }
         return null
+    }
+
+    /** Persist a real article URL, not the mobile SPA shell (/ys/), for queued downloads. */
+    internal fun canonicalPostUrl(source: Source): String {
+        require(source.type == SourceType.POST && source.postGame.isNotEmpty())
+        return "https://www.miyoushe.com/${source.postGame}/article/${source.id}" +
+            if (source.videoIndex > 0) "#omni_vod=${source.videoIndex}" else ""
     }
 
     fun isSupported(url: String): Boolean = parseSource(url) != null
@@ -83,7 +102,7 @@ object MihoyoVideoExtractor {
                 ?: throw IllegalArgumentException("不是受支持的米哈游百科或米游社文章链接")
             when (source.type) {
                 SourceType.WIKI -> extractWiki(rawUrl, source)
-                SourceType.POST -> extractPost(rawUrl, source)
+                SourceType.POST -> extractPost(source)
             }
         }
     }
@@ -126,7 +145,7 @@ object MihoyoVideoExtractor {
         return assemble(rawUrl, source.videoIndex, "米哈游百科", title, author, icon, groups)
     }
 
-    private fun extractPost(rawUrl: String, source: Source): VideoMetadata {
+    private fun extractPost(source: Source): VideoMetadata {
         val data = fetchPost(source.id)
         val wrapper = data.optJSONObject("post") ?: throw IOException("米游社未返回帖子数据")
         val post = wrapper.optJSONObject("post") ?: throw IOException("帖子内容为空")
@@ -184,7 +203,7 @@ object MihoyoVideoExtractor {
             }
         }
         if (groups.isEmpty()) throw IOException("帖子中没有可下载的视频；图片和外站播放器暂不作为视频直链")
-        return assemble(rawUrl, source.videoIndex, "米游社", title, author, cover, groups)
+        return assemble(canonicalPostUrl(source), source.videoIndex, "米游社", title, author, cover, groups)
     }
 
     private fun assemble(
