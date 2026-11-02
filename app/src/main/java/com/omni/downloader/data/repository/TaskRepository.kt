@@ -64,7 +64,7 @@ class TaskRepository internal constructor(
                 val merged = linkedMapOf<String, DownloadTask>()
                 restored.forEach { task ->
                     merged[task.id] = if (task.status.isActive()) {
-                        task.copy(status = TaskStatus.CANCELLED, errorMessage = "任务因应用退出已中止")
+                        task.copy(status = TaskStatus.PAUSED, speedText = "", etaText = "", errorMessage = "中断后可继续下载")
                     } else task
                 }
                 startupChanges?.forEach { it(merged) }
