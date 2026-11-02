@@ -369,20 +369,25 @@ object YouTubeNativeExtractor {
             }
         }
         val video = mutableListOf<FormatOption>()
-        // Probe at most six candidates; two verified quality levels are
-        // sufficient to show a usable choice without hammering the CDN.
-        for (option in meta.availableVideoFormats.take(6)) {
+        // Prioritize already-muxed progressive video for reliable downloads,
+        // then probe a limited number of high-resolution DASH candidates.
+        // A valid audio track alone is NOT a successful video extraction.
+        val candidates = meta.availableVideoFormats.sortedWith(
+            compareBy<FormatOption> { it.isVideoOnly }
+                .thenByDescending { it.height }
+        ).take(6)
+        for (option in candidates) {
             if (option.isVideoOnly && audio.isEmpty()) continue
             if (verifyMediaRange(option.formatId, proxy, headers).isSuccess) {
                 video += option
                 if (video.size >= 2) break
             }
         }
-        if (video.isEmpty() && audio.isEmpty()) {
-            throw IOException("播放器给出了流信息，但 CDN 未提供可读取的媒体字节")
+        if (video.isEmpty()) {
+            throw IOException("播放器只返回音频或不可访问的视频流，不能当成可下载视频")
         }
         meta.copy(
-            availableVideoFormats = video,
+            availableVideoFormats = video.sortedByDescending { it.height },
             availableAudioFormats = audio,
             mediaHeaders = headers
         )
