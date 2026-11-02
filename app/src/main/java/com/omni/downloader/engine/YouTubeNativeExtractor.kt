@@ -401,7 +401,9 @@ object YouTubeNativeExtractor {
         }
         if (checked.isFailure)
             return@withContext Result.failure(checked.exceptionOrNull()!!)
-        if (selected!!.isVideoOnly && task.downloadType == DownloadType.VIDEO_WITH_AUDIO) {
+        val chosen = selected ?: return@withContext Result.failure(
+            IOException("未选中有效 YouTube 下载格式"))
+        if (chosen.isVideoOnly && task.downloadType == DownloadType.VIDEO_WITH_AUDIO) {
             var audioUrl = if (metadata == null) task.directAudioUrl else
                 metadata!!.availableAudioFormats.firstOrNull()?.formatId.orEmpty()
             if (audioUrl.isBlank()) {
@@ -431,7 +433,7 @@ object YouTubeNativeExtractor {
                 return@withContext Result.failure(IOException("下载已取消"))
 
             val v = NativeTransfer.download(
-                context, videoTask, selected.formatId, videoFile, headers, proxy
+                context, videoTask, chosen.formatId, videoFile, headers, proxy
             ) { pct, speed, eta, status ->
                 progress((pct * 0.69f).coerceIn(1f, 69f), speed, eta, status)
             }
@@ -488,7 +490,7 @@ object YouTubeNativeExtractor {
         if (cancelled.contains(task.id))
             return@withContext Result.failure(IOException("下载已取消"))
         DownloadEngine.downloadDirectMediaStream(
-            context, task, selected!!.formatId, proxy, staging, output, progress,
+            context, task, chosen.formatId, proxy, staging, output, progress,
             headers
         )
     }
