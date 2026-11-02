@@ -43,6 +43,17 @@ data class FormatOption(
     val note: String = ""
 )
 
+/** One gallery item, including mirror URLs and optional Live Photo clip. */
+@Serializable
+data class GalleryImage(
+    val index: Int,
+    val url: String,
+    val mirrors: List<String> = emptyList(),
+    val width: Int = 0,
+    val height: Int = 0,
+    val liveVideoUrl: String? = null
+)
+
 /**
  * 视频解析出来的元数据
  */
@@ -58,7 +69,8 @@ data class VideoMetadata(
     val availableVideoFormats: List<FormatOption> = emptyList(),
     val availableAudioFormats: List<FormatOption> = emptyList(),
     val multiMediaList: List<VideoMetadata> = emptyList(), // 包含推文中的全部独立视频
-    val parserId: String = "" // "lux", "douyin" or native default; prevent wrong decoder on download
+    val parserId: String = "", // "lux", "douyin" or native default; prevent wrong decoder on download
+    val imageAssets: List<GalleryImage> = emptyList()
 )
 
 /**
