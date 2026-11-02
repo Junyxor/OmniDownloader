@@ -266,7 +266,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             meta.multiMediaList.getOrElse(_selectedMultiMediaIndex.value) { meta }
         } else meta
 
-        val type = _selectedDownloadType.value
+        val type = if (currentMeta.siteName == "图文") DownloadType.COVER
+            else _selectedDownloadType.value
         val format = _selectedVideoFormat.value
         val audioFormat = _selectedAudioFormat.value
         val resolutionLabel = when (type) {
@@ -286,7 +287,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             selectedResolution = resolutionLabel,
             audioFormat = audioFormat,
             directMediaUrl = DomesticMediaSource.url(currentMeta, format),
-            directMediaHeaders = DomesticMediaSource.headers(currentMeta.siteName)
+            directMediaHeaders = DomesticMediaSource.headers(currentMeta.siteName),
+            parserId = currentMeta.parserId
         )
 
         repository.addTask(task)
@@ -399,7 +401,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        val type = _selectedDownloadType.value
+        val type = if (meta.siteName == "图文") DownloadType.COVER else _selectedDownloadType.value
         val format = _selectedVideoFormat.value
         val audioFormat = _selectedAudioFormat.value
 
@@ -418,11 +420,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val tasksToAdd = mutableListOf<DownloadTask>()
 
         targetList.forEachIndexed { index, sub ->
-            val finalType = if (type == DownloadType.COVER) {
+            val finalType = if (sub.siteName == "图文" || type == DownloadType.COVER) {
                 DownloadType.COVER
-            } else {
-                type
-            }
+            } else type
 
             val task = DownloadTask(
                 id = UUID.randomUUID().toString().replace("-", "").take(12),
@@ -438,7 +438,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 episodeIndex = if (isCollection) index + 1 else 0,
                 episodeTotal = if (isCollection) totalEpisodes else 0,
                 directMediaUrl = DomesticMediaSource.url(sub, format),
-                directMediaHeaders = DomesticMediaSource.headers(sub.siteName)
+                directMediaHeaders = DomesticMediaSource.headers(sub.siteName),
+                parserId = sub.parserId
             )
             tasksToAdd.add(task)
 
