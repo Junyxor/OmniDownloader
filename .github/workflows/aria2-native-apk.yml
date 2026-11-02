@@ -1,4 +1,4 @@
-name: OmniDownloader native aria2 + Lux Android APK
+name: OmniDownloader aria2-only Android APK
 
 on:
   push:
@@ -25,18 +25,6 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.24.6'
-          cache: false
-      # Pin the third-party MIT source to a reviewed commit, not a floating branch.
-      - uses: actions/checkout@v4
-        with:
-          repository: iawia002/lux
-          ref: dd00f6d258d80b6684a0b9402d7124e5c18ef42f
-          path: vendor/lux
-          persist-credentials: false
-
       - name: Setup Android SDK 34
         shell: bash
         run: |
@@ -63,30 +51,6 @@ jobs:
           cp "$ARIA" app/src/main/jniLibs/arm64-v8a/libaria2c.so
           chmod 755 app/src/main/jniLibs/arm64-v8a/libaria2c.so
 
-      - name: Compile pinned MIT Lux extractor for Android ARM64
-        shell: bash
-        run: |
-          set -euo pipefail
-          NDK_DIR="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1 || true)"
-          if [ -z "$NDK_DIR" ]; then
-            SDK_MANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)"
-            "$SDK_MANAGER" "ndk;27.2.12479018"
-            NDK_DIR="$ANDROID_HOME/ndk/27.2.12479018"
-          fi
-          TOOLCHAIN="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          test -x "$TOOLCHAIN/aarch64-linux-android26-clang"
-          mkdir -p app/src/main/assets
-          cp vendor/lux/LICENSE app/src/main/assets/lux-MIT-LICENSE.txt
-          (
-            cd vendor/lux
-            GOOS=android GOARCH=arm64 CGO_ENABLED=1 \
-              CC="$TOOLCHAIN/aarch64-linux-android26-clang" \
-              go build -mod=readonly -buildmode=pie -trimpath -ldflags="-s -w" \
-                -o ../../app/src/main/jniLibs/arm64-v8a/liblux.so .
-          )
-          file app/src/main/jniLibs/arm64-v8a/liblux.so
-          readelf -h app/src/main/jniLibs/arm64-v8a/liblux.so | head -22
-
       - name: Unit test and build APK
         run: |
           chmod +x ./gradlew
@@ -101,9 +65,7 @@ jobs:
             apk="app/build/outputs/apk/$flavor/app-$flavor.apk"
             unzip -l "$apk" > "reports/apk-$flavor-contents.txt"
             grep -q 'lib/arm64-v8a/libaria2c.so' "reports/apk-$flavor-contents.txt"
-            grep -q 'lib/arm64-v8a/liblux.so' "reports/apk-$flavor-contents.txt"
-            grep -q 'assets/lux-MIT-LICENSE.txt' "reports/apk-$flavor-contents.txt"
-            if grep -E 'libpython|libffmpeg|libqjs|youtubedl' "reports/apk-$flavor-contents.txt"; then
+            if grep -Ei 'libpython|libffmpeg|libqjs|youtubedl|liblux|yt-dlp' "reports/apk-$flavor-contents.txt"; then
               echo "Unexpected bundled legacy runtime"; exit 1
             fi
             du -h "$apk"
@@ -113,7 +75,7 @@ jobs:
       - name: Upload installable APKs and audits
         uses: actions/upload-artifact@v4
         with:
-          name: OmniDownloader-aria2-native-arm64-apk
+          name: OmniDownloader-aria2-only-arm64-apk
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             app/build/outputs/apk/release/app-release.apk
