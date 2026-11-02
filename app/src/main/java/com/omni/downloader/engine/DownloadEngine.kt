@@ -109,20 +109,52 @@ object DownloadEngine {
             http.newCall(req).execute().use { response ->
                 if (!response.isSuccessful) throw IOException("封面下载失败 HTTP ${response.code}")
                 val mime = response.header("Content-Type").orEmpty().lowercase(Locale.ROOT)
-                if (!mime.startsWith("image/")) throw IOException("封面响应不是图片")
-                val ext = when {
-                    "png" in mime -> "png"
-                    "webp" in mime -> "webp"
-                    "gif" in mime -> "gif"
-                    else -> "jpg"
+                val body = response.body ?: throw IOException("图片响应为空")
+                body.byteStream().buffered().use { input ->
+                    input.mark(32)
+                    val header = ByteArray(24)
+                    val length = input.read(header)
+                    input.reset()
+                    val ascii = if (length > 0)
+                        String(header, 0, length, Charsets.ISO_8859_1) else ""
+                    val signature = when {
+                        length >= 3 && header[0] == 0xff.toByte() &&
+                            header[1] == 0xd8.toByte() && header[2] == 0xff.toByte() -> "jpg"
+                        length >= 8 && header[0] == 0x89.toByte() &&
+                            ascii.substring(1, 4) == "PNG" -> "png"
+                        length >= 12 && ascii.startsWith("RIFF") &&
+                            ascii.substring(8, 12) == "WEBP" -> "webp"
+                        ascii.startsWith("GIF8") -> "gif"
+                        length >= 12 && ascii.substring(4, 8) == "ftyp" &&
+                            ascii.substring(8, 12) in setOf("avif", "avis") -> "avif"
+                        length >= 12 && ascii.substring(4, 8) == "ftyp" &&
+                            ascii.substring(8, 12).startsWith("hei") -> "heic"
+                        else -> null
+                    }
+                    if (!mime.startsWith("image/") && signature == null)
+                        throw IOException("返回的不是图片数据，而是 " + mime)
+                    val ext = signature ?: when {
+                        "png" in mime -> "png"
+                        "webp" in mime -> "webp"
+                        "gif" in mime -> "gif"
+                        "avif" in mime -> "avif"
+                        "heic" in mime -> "heic"
+                        else -> "jpg"
+                    }
+                    val out = uniqueFile(publicDir, safeTitle(title) + "_cover", ext)
+                    try {
+                        FileOutputStream(out).use { dest -> input.copyTo(dest) }
+                        if (out.length() == 0L) throw IOException("图片为空")
+                        MediaScannerConnection.scanFile(context,
+                            arrayOf(out.absolutePath), null, null)
+                        onProgressUpdate?.invoke(100f, "", "", TaskStatus.COMPLETED)
+                        Result.success(out.absolutePath)
+                    } catch (e: Exception) {
+                        out.delete()
+                        throw e
+                    }
                 }
-                val out = uniqueFile(publicDir, safeTitle(title) + "_cover", ext)
-                val body = response.body ?: throw IOException("封面数据为空")
-                FileOutputStream(out).use { dest -> body.byteStream().use { it.copyTo(dest) } }
-                if (out.length() == 0L) throw IOException("封面为空")
-                MediaScannerConnection.scanFile(context, arrayOf(out.absolutePath), null, null)
-                onProgressUpdate?.invoke(100f, "", "", TaskStatus.COMPLETED)
-                Result.success(out.absolutePath)
+
             }
         } catch (e: Exception) {
             onProgressUpdate?.invoke(0f, "", "", TaskStatus.FAILED)
