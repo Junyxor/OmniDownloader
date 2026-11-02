@@ -478,6 +478,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         startDownloadSelectedMultiMedia(context, meta.multiMediaList.indices.toSet())
     }
 
+    fun pauseTask(context: Context, taskId: String) {
+        DownloadService.pauseDownload(context, taskId)
+        _message.value = "已暂停，下载进度与文件分段已保留"
+    }
+
+    fun resumeTask(context: Context, taskId: String) {
+        DownloadService.resumeDownload(context, taskId)
+        _message.value = "正在继续下载"
+    }
+
+    fun pauseCollection(context: Context, collectionId: String) {
+        repository.tasks.value.filter { it.collectionId == collectionId }
+            .filter { it.status == TaskStatus.PENDING || it.status == TaskStatus.DOWNLOADING }
+            .forEach { DownloadService.pauseDownload(context, it.id) }
+        _message.value = "已暂停合集任务"
+    }
+
+    fun resumeCollection(context: Context, collectionId: String) {
+        repository.tasks.value.filter { it.collectionId == collectionId && it.status == TaskStatus.PAUSED }
+            .forEach { DownloadService.resumeDownload(context, it.id) }
+        _message.value = "已继续合集任务"
+    }
+
     fun cancelTask(context: Context, taskId: String) {
         DownloadService.cancelDownload(context, taskId)
         _message.value = "任务已取消"
