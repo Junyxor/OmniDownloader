@@ -481,7 +481,6 @@ object BilibiliDirectExtractor {
                         try {
                             downloadStreamToFile(
                                 context = context, taskId = task.id,
-                    context = context, taskId = task.id,
                                 url = bestVideoUrl,
                                 backups = bestVideoBackups,
                                 bvid = bvid,
@@ -495,7 +494,6 @@ object BilibiliDirectExtractor {
                             if (bestAudioUrl.isNotEmpty()) {
                                 downloadStreamToFile(
                                 context = context, taskId = task.id,
-                    context = context, taskId = task.id,
                                     url = bestAudioUrl,
                                     backups = bestAudioBackups,
                                     bvid = bvid,
@@ -692,9 +690,6 @@ object BilibiliDirectExtractor {
         }
     }
 
-    /**
-     * 流式下载单个分块到沙盒文件并上报瞬时网速和精准进度
-     */
     /** Multi-connection aria2 transfer for each Bilibili DASH video/audio track. */
     private fun downloadStreamToFile(
         context: Context,
