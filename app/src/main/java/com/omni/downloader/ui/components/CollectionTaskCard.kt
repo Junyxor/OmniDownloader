@@ -3,6 +3,9 @@ package com.omni.downloader.ui.components
 import com.omni.downloader.ui.design.GlassButton
 import com.omni.downloader.ui.design.GlassTextButton
 import com.omni.downloader.ui.design.GlassIconButton
+import com.omni.downloader.ui.design.LocalGlassEnabled
+import com.omni.downloader.ui.design.glassPanelColor
+import com.omni.downloader.ui.design.isDarkGlass
 
 import android.content.Context
 import android.content.Intent
