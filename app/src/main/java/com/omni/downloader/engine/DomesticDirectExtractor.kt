@@ -365,60 +365,79 @@ object DomesticDirectExtractor {
             .find(task.url.substringAfter('#', ""))?.groupValues?.get(1)?.toIntOrNull()
         if (selectedImage != null) {
             val original = task.url.substringBefore('#')
-            val info = extractDouyin(original).getOrElse {
-                return@withContext Result.failure(it)
-            }
-            val asset = info.imageAssets.getOrNull(selectedImage)
-                ?: return@withContext Result.failure(IOException("图集第 ${selectedImage + 1} 项不存在，请重新解析"))
-            val mediaUrls = (listOf(asset.url) + asset.mirrors).distinct()
-            if (mediaUrls.isEmpty()) {
-                return@withContext Result.failure(IOException("图集图片地址失效，请重新解析"))
-            }
-            // Gallery downloads must use the existing aria2 transfer core, not
-            // the legacy OkHttp cover downloader or a separate media binary.
+            val headers = mapOf("User-Agent" to MOBILE_UA, "Referer" to "https://www.douyin.com/") +
+                task.directMediaHeaders
             val staged = File(stagingDir, "douyin_image_${task.id}.part")
-            val headers = mapOf("User-Agent" to MOBILE_UA, "Referer" to "https://www.douyin.com/")
             var lastError: Throwable? = null
-            for (mediaUrl in mediaUrls) {
-                if (!mediaUrl.startsWith("https://") && !mediaUrl.startsWith("http://")) continue
-                val downloaded = Aria2Downloader.download(
-                    context, task.id, mediaUrl, staged, headers, proxyUrl, onProgressUpdate
-                )
-                if (downloaded.isFailure) {
-                    lastError = downloaded.exceptionOrNull()
-                    if (Aria2Downloader.isCancelled(task.id)) {
-                        return@withContext Result.failure(IOException("图集下载已取消", lastError))
-                    }
-                    continue
-                }
-                val extension = ImageMagic.extension(staged)
-                if (extension == null) {
-                    staged.delete()
-                    lastError = IOException("服务器未返回合法图片（可能是 HTML 风控页或失效直链）")
-                    continue
-                }
-                val safeName = task.title.replace(Regex("""[\\/:*?"<>|]"""), "_")
-                    .trim().ifBlank { "Douyin_${selectedImage + 1}" }.take(90)
-                var output = File(publicDir, "$safeName.$extension")
-                var duplicate = 1
-                while (output.exists()) {
-                    output = File(publicDir, "${safeName}_${duplicate++}.$extension")
-                }
-                try {
-                    staged.copyTo(output, overwrite = false)
-                    staged.delete()
-                    android.media.MediaScannerConnection.scanFile(
-                        context, arrayOf(output.absolutePath), arrayOf("image/$extension"), null
+            val attempted = linkedSetOf<String>()
+
+            // Prefer the original image URL and mirrors saved when the task was
+            // queued. Re-fetching an entire signed post for EACH image needlessly
+            // triggers rate limits and breaks jobs after the page becomes blocked.
+            val initial = (listOf(task.directMediaUrl) + task.directMediaAlternates)
+                .filter { it.startsWith("https://") || it.startsWith("http://") }
+                .distinct()
+            var urls = initial
+            var refreshed = false
+            while (true) {
+                for (mediaUrl in urls) {
+                    if (!attempted.add(mediaUrl)) continue
+                    val downloaded = Aria2Downloader.download(
+                        context, task.id, mediaUrl, staged, headers, proxyUrl, onProgressUpdate
                     )
-                    onProgressUpdate(100f, "", "", TaskStatus.COMPLETED)
-                    return@withContext Result.success(output.absolutePath)
-                } catch (e: Exception) {
-                    output.delete()
-                    return@withContext Result.failure(e)
+                    if (downloaded.isFailure) {
+                        lastError = downloaded.exceptionOrNull()
+                        if (Aria2Downloader.isCancelled(task.id)) {
+                            return@withContext Result.failure(IOException("图集下载已取消", lastError))
+                        }
+                        continue
+                    }
+                    val extension = ImageMagic.extension(staged)
+                    if (extension == null) {
+                        staged.delete()
+                        lastError = IOException("服务器未返回合法图片（可能是 HTML 风控页或失效直链）")
+                        continue
+                    }
+                    val safeName = task.title.replace(Regex("""[\\/:*?"<>|]"""), "_")
+                        .trim().ifBlank { "Douyin_${selectedImage + 1}" }.take(90)
+                    var output = File(publicDir, "$safeName.$extension")
+                    var duplicate = 1
+                    while (output.exists()) {
+                        output = File(publicDir, "${safeName}_${duplicate++}.$extension")
+                    }
+                    try {
+                        staged.copyTo(output, overwrite = false)
+                        staged.delete()
+                        android.media.MediaScannerConnection.scanFile(
+                            context, arrayOf(output.absolutePath), arrayOf("image/$extension"), null
+                        )
+                        onProgressUpdate(100f, "", "", TaskStatus.COMPLETED)
+                        return@withContext Result.success(output.absolutePath)
+                    } catch (e: Exception) {
+                        output.delete()
+                        return@withContext Result.failure(e)
+                    }
                 }
+                if (refreshed) break
+                refreshed = true
+                // Only refresh after every persisted source fails (or for old
+                // tasks that predate directMediaAlternates). This still requires
+                // Douyin to return valid, identity-matched detail information.
+                val fresh = extractDouyin(original).getOrElse {
+                    lastError = it
+                    break
+                }
+                val asset = fresh.imageAssets.getOrNull(selectedImage)
+                if (asset == null || asset.index != selectedImage) {
+                    lastError = IOException("图集序号或作品详情不匹配")
+                    break
+                }
+                urls = (listOf(asset.url) + asset.mirrors)
+                    .filter { it.startsWith("https://") || it.startsWith("http://") }
+                    .distinct()
             }
             return@withContext Result.failure(IOException(
-                "图集第 ${selectedImage + 1} 张图片下载失败，已尝试所有地址",
+                "图集第 ${selectedImage + 1} 张图片下载失败，已尝试可用地址",
                 lastError
             ))
         }
