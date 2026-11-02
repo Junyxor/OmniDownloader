@@ -129,8 +129,8 @@ object XPublicExtractor {
             val image = imageIndex.find(suffix)?.groupValues?.get(1)?.toIntOrNull()
             val video = videoIndex.find(suffix)?.groupValues?.get(1)?.toIntOrNull()
             val chosen = when {
-                image != null -> all.filter { it.siteName == "图文" }.getOrNull(image)
-                video != null -> all.filter { it.siteName != "图文" }.getOrNull(video)
+                image != null -> all.firstOrNull { it.url.endsWith("#omni_fx_image=$image") }
+                video != null -> all.firstOrNull { it.url.endsWith("#omni_fx_video=$video") }
                 else -> all.firstOrNull()
             } ?: throw IOException("所选 X 媒体已失效")
             if (chosen.siteName == "图文") {
