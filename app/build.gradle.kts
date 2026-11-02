@@ -12,8 +12,8 @@ android {
         applicationId = "com.omni.downloader"
         minSdk = 26
         targetSdk = 34
-        versionCode = 51
-        versionName = "1.5.10"
+        versionCode = 52
+        versionName = "1.6.0-native-alpha"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -103,9 +103,7 @@ dependencies {
     // Network (OkHttp for link redirection and sniffing)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // Native yt-dlp downloader plus FFmpeg. Aria2c is not selected by any request.
-    implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
-    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
+    // Native aria2c is packaged via CI in jniLibs/arm64-v8a; no Python/FFmpeg runtime.
 
     // Debug tooling
     debugImplementation("androidx.compose.ui:ui-tooling")
