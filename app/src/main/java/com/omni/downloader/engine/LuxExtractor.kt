@@ -196,19 +196,23 @@ object LuxExtractor {
                 ).getOrThrow()
             }
             val options = streams(info)
-            val selected = options.firstOrNull { it.label == task.selectedResolution }
-                ?: options.firstOrNull() ?: throw IOException("无有效视频码流")
-            val parts = selected.parts
-            if (parts.size == 1) {
+            val selected = if (task.downloadType == DownloadType.AUDIO_ONLY) {
+                options.firstOrNull {
+                    it.label.contains("audio/mp4", true) || it.parts.first().ext == "m4a"
+                } ?: options.firstOrNull { it.label == task.selectedResolution }
+            } else options.firstOrNull { it.label == task.selectedResolution }
+            val stream = selected ?: options.firstOrNull() ?: throw IOException("无有效视频码流")
+            val parts = stream.parts
+            if (parts.size == 1 || (parts.size == 2 && task.downloadType != DownloadType.VIDEO_WITH_AUDIO)) {
+                val one = if (parts.size == 1) parts[0] else if (task.downloadType == DownloadType.AUDIO_ONLY)
+                    parts[1] else parts[0]
                 return@runCatching DownloadEngine.downloadDirectMediaStream(
-                    context, task, parts[0].url, proxy, staging, outputDir, progress,
+                    context, task, one.url, proxy, staging, outputDir, progress,
                     mapOf("Referer" to base)
                 ).getOrThrow()
             }
             if (parts.size != 2 || parts.any { it.ext !in setOf("mp4", "m4a") })
-                throw IOException("所选画质需要额外混流，请选择 MP4 格式")
-            if (task.downloadType != DownloadType.VIDEO_WITH_AUDIO)
-                throw IOException("分轨只支持完整视频模式")
+                throw IOException("所选画质需要复杂分片或 WebM 混流，请选择 MP4 格式")
             staging.mkdirs(); outputDir.mkdirs()
             val chunks = parts.mapIndexed { i, _ -> File(staging, "lux_" + task.id + "_$i.part") }
             val merged = File(staging, "lux_" + task.id + "_merged.mp4")
