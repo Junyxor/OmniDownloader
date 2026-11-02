@@ -66,9 +66,13 @@ object DownloadEngine {
                         url = url, title = "直接媒体文件", siteName = "直链",
                         availableVideoFormats = listOf(FormatOption(url, "原始媒体", ext = "mp4"))
                     ))
-                else -> Result.failure(IOException(
-                    "当前精简版没有该平台的原生解析规则：$site。为减少 APK 体积，已移除 Python/yt-dlp。"
-                ))
+                // Generic HTML5 media is a conservative fallback, not a universal extractor.
+                // Explicitly avoid sites needing signed JS players, auth or encrypted manifests.
+                site in setOf("YouTube", "Instagram", "Facebook", "X (Twitter)", "Pinterest") ->
+                    Result.failure(IOException(
+                        "$site 目前没有可靠的原生专用解析器，通用网页解析不能保证获取该平台的视频。"
+                    ))
+                else -> GenericWebVideoExtractor.extract(url)
             }
         } catch (e: Exception) { Result.failure(e) }
     }
@@ -140,7 +144,10 @@ object DownloadEngine {
                     }
                     downloadDirectMediaStream(context, task, target, proxyUrl, staging, output, onProgressUpdate)
                 }
-                else -> Result.failure(IOException("无可用原生下载适配器：$site"))
+                site == "通用网页" || task.selectedResolution == "网页原视频" ||
+                    task.selectedResolution == "网页原音频" ->
+                    GenericWebVideoExtractor.download(context, task, staging, output, onProgressUpdate, proxyUrl)
+                else -> Result.failure(IOException("没有可用的原生下载适配器：$site"))
             }
         } catch (e: Exception) { Result.failure(e) }
     }
