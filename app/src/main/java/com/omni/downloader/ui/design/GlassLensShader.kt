@@ -68,7 +68,7 @@ uniform float darkness;
 
 half4 main(float2 p) {
     float2 center = size * 0.5;
-    float radius = min(size.y * 0.49, 32.0);
+    float radius = min(size.y * 0.49, size.x * 0.5);
     float2 q = abs(p - center) - (size * 0.5 - radius);
     float sdf = length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - radius;
     float interior = max(0.0, -sdf);
