@@ -68,6 +68,7 @@ enum class TaskStatus(val label: String) {
     PENDING("等待中"),
     DOWNLOADING("正在下载"),
     PROCESSING("正在合并封装"),
+    PAUSED("已暂停"),
     COMPLETED("下载完成"),
     FAILED("下载失败"),
     CANCELLED("已取消")
