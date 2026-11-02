@@ -274,7 +274,12 @@ fun TaskCard(
                             text = strings.retry,
                             icon = Icons.Outlined.Refresh,
                             primary = true,
-                            onClick = { onRetry(task.url) }
+                            // Failed downloads keep their partial files and resume in-place.
+                            // A manually cancelled task is a fresh user request.
+                            onClick = {
+                                if (task.status == TaskStatus.FAILED) onResume(task.id)
+                                else onRetry(task.url)
+                            }
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         TaskIconBtn(
