@@ -79,13 +79,20 @@ object Aria2Downloader {
                 File(destination.absolutePath + ".aria2").delete()
                 sourceKey.writeText(key)
             }
+            val googleVideo = runCatching {
+                val host = java.net.URI(url).host.orEmpty().lowercase(java.util.Locale.ROOT)
+                host == "googlevideo.com" || host.endsWith(".googlevideo.com")
+            }.getOrDefault(false)
+            // GoogleVideo signed URLs can be sensitive to bursty range requests.
+            // One connection cannot resolve PO-token, expired URL or IP-based 403.
+            val segmentCount = if (googleVideo) 1 else 8
             val args = mutableListOf(
                 binary.absolutePath, "--no-conf=true", "--enable-color=false",
                 "--console-log-level=notice", "--summary-interval=1",
                 "--show-console-readout=true", "--file-allocation=none",
                 "--continue=true", "--auto-file-renaming=false", "--allow-overwrite=true",
-                "--max-concurrent-downloads=1", "--max-connection-per-server=8",
-                "--split=8", "--min-split-size=1M", "--max-tries=5",
+                "--max-concurrent-downloads=1", "--max-connection-per-server=$segmentCount",
+                "--split=$segmentCount", "--min-split-size=1M", "--max-tries=5",
                 "--retry-wait=2", "--connect-timeout=20", "--timeout=60",
                 "--check-certificate=true",
                 "--ca-certificate=${AndroidCaBundle.get(context).absolutePath}",

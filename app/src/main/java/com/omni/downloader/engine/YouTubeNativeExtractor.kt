@@ -301,6 +301,47 @@ object YouTubeNativeExtractor {
             }
         }
 
+    /**
+     * Check the exact signed CDN stream with a small range GET.
+     * Parsing titles and qualities must never be confused with downloading bytes.
+     */
+    private fun verifyMediaRange(url: String, proxy: String): Result<Unit> = runCatching {
+        val uri = URI(url)
+        if (uri.scheme != "https" || uri.host.isNullOrBlank())
+            throw IOException("YouTube 媒体流地址无效")
+        val req = Request.Builder().url(url)
+            .header("User-Agent", UA)
+            .header("Referer", "https://www.youtube.com/")
+            .header("Range", "bytes=0-1023")
+            .header("Accept-Encoding", "identity")
+            .build()
+        client(proxy).newCall(req).execute().use { response ->
+            when (response.code) {
+                200, 206 -> {
+                    val contentType = response.header("Content-Type").orEmpty().lowercase()
+                    if (contentType.contains("text/html") ||
+                        contentType.contains("application/json") ||
+                        contentType.contains("text/plain")) {
+                        throw IOException("YouTube CDN 返回错误页面而非媒体数据")
+                    }
+                    if (response.body == null) throw IOException("YouTube CDN 没有返回媒体数据")
+                }
+                403 -> throw IOException(
+                    "YouTube CDN HTTP 403：可能需要 PO Token、JS 签名、授权或者当前网络出口受到限制"
+                )
+                404, 410 -> throw IOException(
+                    "YouTube CDN HTTP " + response.code + "：已解析直链过期，请重新解析"
+                )
+                429 -> throw IOException(
+                    "YouTube CDN HTTP 429：访问频率受限，请勿连续重试"
+                )
+                else -> throw IOException(
+                    "YouTube CDN HTTP " + response.code + "：当前媒体流不可下载"
+                )
+            }
+        }
+    }
+
     suspend fun download(
         context: Context, task: DownloadTask, staging: File, output: File,
         progress: (Float, String, String, TaskStatus) -> Unit, proxy: String
@@ -326,9 +367,15 @@ object YouTubeNativeExtractor {
             "Referer" to "https://www.youtube.com/",
             "User-Agent" to UA
         )
+        val checked = verifyMediaRange(selected.formatId, proxy)
+        if (checked.isFailure)
+            return@withContext Result.failure(checked.exceptionOrNull()!!)
         if (selected.isVideoOnly && task.downloadType == DownloadType.VIDEO_WITH_AUDIO) {
             val audio = metadata.availableAudioFormats.firstOrNull()
                 ?: return@withContext Result.failure(IOException("高画质 DASH 缺失兼容 AAC 音轨"))
+            val checkedAudio = verifyMediaRange(audio.formatId, proxy)
+            if (checkedAudio.isFailure)
+                return@withContext Result.failure(checkedAudio.exceptionOrNull()!!)
             val videoFile = File(staging, "yt_" + task.id + "_video.m4v")
             val audioFile = File(staging, "yt_" + task.id + "_audio.m4a")
             val mergedFile = File(staging, "yt_" + task.id + "_merged.mp4")
