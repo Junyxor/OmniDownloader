@@ -1,5 +1,8 @@
 package com.omni.downloader.ui.components
 
+import com.omni.downloader.ui.design.GlassButton
+import com.omni.downloader.ui.design.GlassTextButton
+
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
@@ -36,13 +39,13 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
@@ -300,7 +303,7 @@ fun TaskCard(
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
+                GlassTextButton(onClick = {
                     openMediaFile(context, task.localFilePath, task.downloadType)
                 }) {
                     Text("系统相册打开")
@@ -308,12 +311,12 @@ fun TaskCard(
             },
             dismissButton = {
                 Row {
-                    TextButton(onClick = {
+                    GlassTextButton(onClick = {
                         shareMediaFile(context, task.localFilePath, task.title)
                     }) {
                         Text("分享")
                     }
-                    TextButton(onClick = { showGifPreviewDialog = false }) {
+                    GlassTextButton(onClick = { showGifPreviewDialog = false }) {
                         Text("关闭")
                     }
                 }
@@ -433,7 +436,7 @@ private fun TaskErrorSection(errorMessage: String) {
                 }
             },
             confirmButton = {
-                Button(onClick = {
+                GlassButton(onClick = {
                     val clip = android.content.ClipData.newPlainText("ErrorLog", errorMessage)
                     (context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager)?.setPrimaryClip(clip)
                     Toast.makeText(context, "已复制错误日志", Toast.LENGTH_SHORT).show()
@@ -443,7 +446,7 @@ private fun TaskErrorSection(errorMessage: String) {
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showErrorDetailDialog = false }) {
+                GlassTextButton(onClick = { showErrorDetailDialog = false }) {
                     Text("关闭")
                 }
             }
