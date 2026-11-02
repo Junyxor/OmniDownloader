@@ -61,7 +61,7 @@ internal fun opticalGlassLensModifier(dark: Boolean): Modifier {
  * Three ambient.eval() taps are the only texture samples per pixel.
  * No unbounded loops or high-radius Gaussian kernels.
  */
-private const val LENS_AGSL = """
+private val LENS_AGSL = """
 uniform shader ambient;
 uniform float2 size;
 uniform float darkness;
