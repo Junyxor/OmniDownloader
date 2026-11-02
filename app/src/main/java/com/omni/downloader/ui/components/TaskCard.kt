@@ -80,6 +80,8 @@ import java.io.File
 fun TaskCard(
     task: DownloadTask,
     onCancel: (taskId: String) -> Unit,
+    onPause: (taskId: String) -> Unit,
+    onResume: (taskId: String) -> Unit,
     onDelete: (taskId: String, deleteFile: Boolean) -> Unit,
     onRetry: (url: String) -> Unit,
     progressFlowProvider: ((String) -> StateFlow<TaskProgress>)? = null,
@@ -100,6 +102,7 @@ fun TaskCard(
         TaskStatus.COMPLETED -> statusColors.success
         TaskStatus.DOWNLOADING, TaskStatus.PROCESSING -> MaterialTheme.colorScheme.primary
         TaskStatus.FAILED -> statusColors.error
+        TaskStatus.PAUSED -> statusColors.warning
         else -> statusColors.warning
     }
     val statusColor by animateColorAsState(
@@ -112,6 +115,7 @@ fun TaskCard(
         TaskStatus.PENDING -> strings.statusPending
         TaskStatus.DOWNLOADING -> strings.statusDownloading
         TaskStatus.PROCESSING -> strings.statusProcessing
+        TaskStatus.PAUSED -> strings.statusPaused
         TaskStatus.COMPLETED -> strings.statusCompleted
         TaskStatus.FAILED -> strings.statusFailed
         TaskStatus.CANCELLED -> strings.statusCancelled
@@ -172,7 +176,7 @@ fun TaskCard(
             }
 
             // 进度条与速度区域：高频 StateFlow 读取完全隔离在该独立微组件内
-            if (task.status == TaskStatus.DOWNLOADING || task.status == TaskStatus.PROCESSING) {
+            if (task.status in setOf(TaskStatus.DOWNLOADING, TaskStatus.PROCESSING, TaskStatus.PENDING, TaskStatus.PAUSED)) {
                 Spacer(modifier = Modifier.height(12.dp))
                 TaskDownloadingProgressSection(
                     fallbackStatus = task.status,
@@ -195,11 +199,41 @@ fun TaskCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 when (task.status) {
-                    TaskStatus.DOWNLOADING, TaskStatus.PROCESSING, TaskStatus.PENDING -> {
+                    TaskStatus.DOWNLOADING, TaskStatus.PENDING -> {
+                        OmniPillButton(
+                            text = strings.pause,
+                            icon = Icons.Outlined.Pause,
+                            primary = false,
+                            onClick = { onPause(task.id) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TaskIconBtn(
+                            icon = Icons.Outlined.Close,
+                            contentDescription = strings.cancel,
+                            onClick = { onCancel(task.id) }
+                        )
+                    }
+                    TaskStatus.PROCESSING -> {
+                        // Android MediaMuxer cannot safely checkpoint a partial MP4.
+                        // Allow cancellation only while the final container is being written.
                         OmniPillButton(
                             text = strings.cancel,
                             icon = Icons.Outlined.Close,
                             primary = false,
+                            onClick = { onCancel(task.id) }
+                        )
+                    }
+                    TaskStatus.PAUSED -> {
+                        OmniPillButton(
+                            text = strings.resume,
+                            icon = Icons.Outlined.PlayArrow,
+                            primary = true,
+                            onClick = { onResume(task.id) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TaskIconBtn(
+                            icon = Icons.Outlined.Close,
+                            contentDescription = strings.cancel,
                             onClick = { onCancel(task.id) }
                         )
                     }
@@ -506,10 +540,11 @@ private fun TaskDownloadingProgressSection(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = if (liveProgress.status == TaskStatus.PROCESSING) {
-                    "正在合并音视频轨..."
-                } else {
-                    "${liveProgress.progress.toInt()}% · ${liveProgress.speedText}"
+                text = when (liveProgress.status) {
+                    TaskStatus.PROCESSING -> "正在封装视频..."
+                    TaskStatus.PAUSED -> "${liveProgress.progress.toInt()}% · 已暂停（可继续）"
+                    TaskStatus.PENDING -> "${liveProgress.progress.toInt()}% · 等待下载"
+                    else -> "${liveProgress.progress.toInt()}% · ${liveProgress.speedText}"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
