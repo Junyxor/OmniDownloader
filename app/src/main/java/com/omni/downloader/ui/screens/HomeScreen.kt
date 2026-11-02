@@ -1,5 +1,10 @@
 package com.omni.downloader.ui.screens
 
+import com.omni.downloader.ui.design.GlassButton
+import com.omni.downloader.ui.design.GlassTextButton
+import com.omni.downloader.ui.design.GlassFilledTonalButton
+import com.omni.downloader.ui.design.GlassIconButton
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -39,16 +44,16 @@ import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Error
 import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material3.Button
+
 import androidx.compose.material3.ButtonDefaults
 import com.omni.downloader.ui.design.TabProgressIndicator
-import androidx.compose.material3.FilledTonalButton
+
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.AlertDialog
@@ -216,7 +221,7 @@ fun HomeScreen(
                 }
             },
             confirmButton = {
-                Button(
+                GlassButton(
                     onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                         val clip = ClipData.newPlainText("ErrorLog", errorDialogDetail)
@@ -229,7 +234,7 @@ fun HomeScreen(
                 }
             },
             dismissButton = {
-                TextButton(
+                GlassTextButton(
                     onClick = {
                         viewModel.dismissErrorDialog()
                         onNavigateToSettings()
@@ -392,7 +397,7 @@ private fun HomeInputPanel(
             },
             trailingIcon = {
                 if (inputUrl.isNotEmpty()) {
-                    IconButton(onClick = { viewModel.updateInputUrl("") }) {
+                    GlassIconButton(onClick = { viewModel.updateInputUrl("") }) {
                         Icon(
                             imageVector = Icons.Outlined.Clear,
                             contentDescription = strings.clear,
@@ -400,7 +405,7 @@ private fun HomeInputPanel(
                         )
                     }
                 } else {
-                    IconButton(onClick = { viewModel.checkClipboardAndPaste(context, autoDownload = false) }) {
+                    GlassIconButton(onClick = { viewModel.checkClipboardAndPaste(context, autoDownload = false) }) {
                         Icon(
                             imageVector = Icons.Outlined.ContentPaste,
                             contentDescription = strings.paste,
@@ -433,7 +438,7 @@ private fun HomeInputPanel(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            FilledTonalButton(
+            GlassFilledTonalButton(
                 onClick = { viewModel.checkClipboardAndPaste(context, autoDownload = true) },
                 modifier = Modifier
                     .weight(1f)
@@ -459,7 +464,7 @@ private fun HomeInputPanel(
                 )
             }
 
-            Button(
+            GlassButton(
                 onClick = onAnalyze,
                 modifier = Modifier
                     .weight(1f)
@@ -604,7 +609,7 @@ private fun HomeActiveTasksSection(
             OmniSectionHeader(
                 title = "${strings.activeTasksTitle} (${activeTasks.size})",
                 action = {
-                    TextButton(onClick = onNavigateToTasks) {
+                    GlassTextButton(onClick = onNavigateToTasks) {
                         Text(
                             text = strings.viewAll,
                             style = MaterialTheme.typography.labelLarge
