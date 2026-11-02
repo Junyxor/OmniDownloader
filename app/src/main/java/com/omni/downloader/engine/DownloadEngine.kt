@@ -114,10 +114,10 @@ object DownloadEngine {
         onProgressUpdate: (Float, String, String, TaskStatus) -> Unit
     ): Result<String> = withContext(Dispatchers.IO) {
         cancelled.remove(task.id)
-        Aria2Downloader.resetCancellation(task.id)
+        NativeTransfer.reset(task.id)
         val url = UrlSniffer.sanitizeAndResolveUrl(task.url)
         val site = UrlSniffer.identifySite(url)
-        val staging = File(context.cacheDir, "native-staging").apply { mkdirs() }
+        val staging = File(context.noBackupFilesDir, "native-staging").apply { mkdirs() }
         val output = getDownloadDir(context).apply { mkdirs() }
         if (task.downloadType == DownloadType.COVER) {
             return@withContext downloadCoverFile(context, task.thumbnailUrl.ifBlank { task.url }, task.title,
@@ -164,7 +164,7 @@ object DownloadEngine {
             if (it.isNotBlank()) headers["Cookie"] = it
         }
         headers.putAll(requestHeaders)
-        val downloaded = Aria2Downloader.download(
+        val downloaded = NativeTransfer.download(
             context, task.id, targetUrl, source, headers, proxyUrl, onProgressUpdate
         )
         if (downloaded.isFailure) return@withContext Result.failure(downloaded.exceptionOrNull()!!)
@@ -212,12 +212,14 @@ object DownloadEngine {
             processed.delete()
             source.delete()
             File(source.absolutePath + ".aria2").delete()
+            File(source.absolutePath + ".aria2source").delete()
+            File(source.absolutePath + ".httpresume").delete()
         }
     }
 
     fun cancelTask(taskId: String) {
         cancelled.add(taskId)
-        Aria2Downloader.cancel(taskId)
+        NativeTransfer.cancel(taskId)
     }
 
     private fun safeTitle(value: String): String =
