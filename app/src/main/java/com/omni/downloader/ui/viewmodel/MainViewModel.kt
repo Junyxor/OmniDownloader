@@ -299,7 +299,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.addTask(task)
         DownloadService.startDownload(context, task.id)
 
-        if (saveCover && currentMeta.thumbnailUrl.isNotBlank()) {
+        if (saveCover && currentMeta.siteName != "图文" && currentMeta.thumbnailUrl.isNotBlank()) {
             val coverTask = DownloadTask(
                 id = UUID.randomUUID().toString().replace("-", "").take(12),
                 url = currentMeta.url,
@@ -452,7 +452,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             tasksToAdd.add(task)
 
-            if (saveCover && sub.thumbnailUrl.isNotBlank()) {
+            if (saveCover && sub.siteName != "图文" && sub.thumbnailUrl.isNotBlank()) {
                 val coverTask = DownloadTask(
                     id = UUID.randomUUID().toString().replace("-", "").take(12),
                     url = sub.url,
